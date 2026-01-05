@@ -1,0 +1,116 @@
+import { AgnDataset, LightCurvePoint } from './types';
+
+const SAMPLE_CURVE_A: LightCurvePoint[] = [
+  { mjd: 58840.2, mag: 19.1, magerr: 0.04, filter: 'g' },
+  { mjd: 58848.1, mag: 19.2, magerr: 0.05, filter: 'g' },
+  { mjd: 58859.0, mag: 18.6, magerr: 0.03, filter: 'g' },
+  { mjd: 58869.4, mag: 18.2, magerr: 0.03, filter: 'g' },
+  { mjd: 58880.6, mag: 18.5, magerr: 0.04, filter: 'g' },
+  { mjd: 58892.9, mag: 18.9, magerr: 0.05, filter: 'g' },
+  { mjd: 58908.2, mag: 18.4, magerr: 0.04, filter: 'r' },
+  { mjd: 58921.8, mag: 18.1, magerr: 0.04, filter: 'r' },
+  { mjd: 58936.3, mag: 18.3, magerr: 0.05, filter: 'r' },
+  { mjd: 58949.1, mag: 18.7, magerr: 0.05, filter: 'r' },
+];
+
+const SAMPLE_CURVE_B: LightCurvePoint[] = [
+  { mjd: 58620.3, mag: 20.4, magerr: 0.06, filter: 'g' },
+  { mjd: 58633.1, mag: 20.2, magerr: 0.06, filter: 'g' },
+  { mjd: 58647.9, mag: 19.7, magerr: 0.05, filter: 'g' },
+  { mjd: 58660.2, mag: 19.5, magerr: 0.05, filter: 'g' },
+  { mjd: 58673.7, mag: 19.6, magerr: 0.05, filter: 'r' },
+  { mjd: 58688.9, mag: 19.4, magerr: 0.04, filter: 'r' },
+  { mjd: 58700.1, mag: 19.3, magerr: 0.04, filter: 'r' },
+  { mjd: 58713.4, mag: 19.5, magerr: 0.05, filter: 'r' },
+  { mjd: 58729.6, mag: 19.9, magerr: 0.06, filter: 'r' },
+];
+
+const SAMPLE_CURVE_C: LightCurvePoint[] = [
+  { mjd: 58940.8, mag: 18.9, magerr: 0.04, filter: 'i' },
+  { mjd: 58954.6, mag: 18.7, magerr: 0.03, filter: 'i' },
+  { mjd: 58969.1, mag: 18.3, magerr: 0.03, filter: 'i' },
+  { mjd: 58983.2, mag: 18.1, magerr: 0.03, filter: 'i' },
+  { mjd: 58996.0, mag: 18.2, magerr: 0.03, filter: 'i' },
+  { mjd: 59010.4, mag: 18.5, magerr: 0.04, filter: 'i' },
+];
+
+export const SAMPLE_DATASET: AgnDataset = {
+  metadata: {
+    dataset: 'IRSA CL-AGN sample (demo)',
+    generated_at: '2024-10-05T17:40:00Z',
+    n_candidates: 3,
+    notes: 'Synthetic sample that mirrors the IRSA scored.json schema.',
+  },
+  candidates: [
+    {
+      object_id: 'IRSA_CLAGN_01',
+      score: 0.92,
+      score_uncertainty: 0.04,
+      delta_mag: 1.12,
+      restframe_timescale_days: 124.6,
+      intrinsic_probability: 0.88,
+      obscuration_probability: 0.12,
+      intrinsic_obscuration_flag: 'intrinsic',
+      intrinsic_obscuration_evidence: 'No IR rise (|Delta W1|<0.2); Optical colors stable (|Delta(g-r)|<0.15); Gaia variability flag triggered',
+      qa_badge: 'green',
+      qa_badge_reason: 'Clean PSF, no neighbor flags.',
+      drw_peak_sigma: 6.3,
+      ir_lag_days: 88,
+      redshift: 0.063,
+      ra: 150.3492,
+      dec: 2.1187,
+      clean_light_curve_path: './sample-data/lightcurves/IRSA_CLAGN_01_clean.csv',
+    },
+    {
+      object_id: 'IRSA_CLAGN_02',
+      score: 0.83,
+      score_uncertainty: 0.06,
+      delta_mag: 0.92,
+      restframe_timescale_days: 210.3,
+      intrinsic_probability: 0.61,
+      obscuration_probability: 0.39,
+      intrinsic_obscuration_flag: 'intrinsic',
+      intrinsic_obscuration_evidence: 'Coherent g/r dimming; WISE lag ~100d; Gaia varflag=1',
+      qa_badge: 'yellow',
+      qa_badge_reason: 'Crowded field, mild centroid drift.',
+      drw_peak_sigma: 5.1,
+      ir_lag_days: 105,
+      redshift: 0.112,
+      ra: 214.6655,
+      dec: -0.4418,
+      clean_light_curve_path: './sample-data/lightcurves/IRSA_CLAGN_02_clean.csv',
+    },
+    {
+      object_id: 'IRSA_CLAGN_03',
+      score: 0.71,
+      score_uncertainty: 0.08,
+      delta_mag: 0.73,
+      restframe_timescale_days: 62.4,
+      intrinsic_probability: 0.41,
+      obscuration_probability: 0.59,
+      intrinsic_obscuration_flag: 'obscuration',
+      intrinsic_obscuration_evidence: 'Stronger reddening trend; IR lag weak; dust-like color slope',
+      qa_badge: 'yellow',
+      qa_badge_reason: 'Lower cadence coverage.',
+      drw_peak_sigma: 4.2,
+      ir_lag_days: 40,
+      redshift: 0.081,
+      ra: 334.4821,
+      dec: -15.2264,
+      clean_light_curve_path: './sample-data/lightcurves/IRSA_CLAGN_03_clean.csv',
+    },
+  ],
+  light_curves: {
+    IRSA_CLAGN_01: SAMPLE_CURVE_A,
+    IRSA_CLAGN_02: SAMPLE_CURVE_B,
+    IRSA_CLAGN_03: SAMPLE_CURVE_C,
+  },
+};
+
+export const FILTER_COLORS: Record<string, string> = {
+  g: '#6366f1',
+  r: '#ec4899',
+  i: '#22c55e',
+  z: '#0ea5e9',
+  unknown: '#94a3b8',
+};

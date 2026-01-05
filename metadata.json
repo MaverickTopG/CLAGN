@@ -1,0 +1,5 @@
+{
+  "name": "AGN Pulse",
+  "description": "A judge-ready AGN light-curve console with GSAP animations, custom pulse graph, and IRSA-compatible dataset parsing.",
+  "requestFramePermissions": []
+}
