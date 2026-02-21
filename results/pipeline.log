@@ -1,0 +1,74 @@
+2026-02-21 01:49:06,735 [INFO] clagn.main — ======================================================================
+2026-02-21 01:49:06,736 [INFO] clagn.main — CLAGN DETECTION PIPELINE
+2026-02-21 01:49:06,736 [INFO] clagn.main — Scientific basis: Ricci & Trakhtenbrot 2022 (arXiv:2211.05132)
+2026-02-21 01:49:06,736 [INFO] clagn.main — ======================================================================
+2026-02-21 01:49:06,736 [INFO] clagn.main — Input:   catalog.csv
+2026-02-21 01:49:06,736 [INFO] clagn.main — Output:  ./results/
+2026-02-21 01:49:06,736 [INFO] clagn.main — Top N:   6
+2026-02-21 01:49:06,736 [INFO] clagn.main — Workers: 1
+2026-02-21 01:49:06,736 [INFO] clagn.main — TEST MODE: processing first 5 sources only
+2026-02-21 01:49:06,736 [INFO] clagn.main — 
+Loading catalog: catalog.csv
+2026-02-21 01:49:06,746 [INFO] clagn.ingestion.catalog — Loaded 10 sources from catalog.csv
+2026-02-21 01:49:06,748 [INFO] clagn.ingestion.catalog — Final catalog: 10 sources after validation (started with 10)
+2026-02-21 01:49:06,748 [INFO] clagn.main — Test mode: using first 5 sources
+2026-02-21 01:49:06,748 [INFO] clagn.main — Processing 5 sources
+
+2026-02-21 01:53:29,706 [INFO] clagn.ingestion.wise — Mrk1018: 224 clean epochs | baseline=14.5 yr | pre-gap=31 | post-gap=193
+2026-02-21 01:53:33,006 [INFO] clagn.worker.Mrk1018 — [001/5] Mrk1018 | z=0.042 | Baseline=14.5yr | n_epochs=224 | Score=0.560 | CLAGN candidate — type ambiguous, spectroscopic fo
+2026-02-21 01:55:46,620 [INFO] clagn.worker.1ES1927+654 — [002/5] 1ES1927+654 | z=0.011 | Rejected: Only 3 valid W1 flux measurements
+2026-02-21 01:58:20,490 [INFO] clagn.ingestion.wise — NGC2617: 7 clean epochs | baseline=4.6 yr | pre-gap=0 | post-gap=7
+2026-02-21 01:58:20,491 [INFO] clagn.worker.NGC2617 — [003/5] NGC2617 | z=0.014 | Rejected: Only 7 epochs (need 20)
+2026-02-21 02:00:46,253 [INFO] clagn.ingestion.wise — Mrk590: 281 clean epochs | baseline=14.5 yr | pre-gap=62 | post-gap=219
+2026-02-21 02:00:50,706 [INFO] clagn.worker.Mrk590 — [004/5] Mrk590 | z=0.026 | Baseline=14.5yr | n_epochs=281 | Score=0.402 | CLAGN candidate — type ambiguous, spectroscopic fo
+2026-02-21 02:03:14,711 [INFO] clagn.ingestion.wise — HE1136-2304: 23 clean epochs | baseline=10.0 yr | pre-gap=0 | post-gap=23
+2026-02-21 02:03:16,405 [INFO] clagn.worker.HE1136-2304 — [005/5] HE1136-2304 | z=0.027 | Baseline=10.0yr | n_epochs=23 | Score=0.099 | CLAGN candidate — type ambiguous, spectroscopic fo
+2026-02-21 02:03:16,406 [INFO] clagn.main — 
+============================================================
+Processing complete: 3/5 sources succeeded in 850s
+============================================================
+2026-02-21 02:03:16,407 [INFO] clagn.scoring.clagn_score — Mrk1018: FP penalty 0.50× → score 0.560 → 0.280 [host_contamination_risk(z<0.05,marginal_delta_mag)]
+2026-02-21 02:03:16,409 [INFO] clagn.scoring.clagn_score — Mrk590: FP penalty 0.50× → score 0.402 → 0.201 [host_contamination_risk(z<0.05,marginal_delta_mag)]
+2026-02-21 02:03:16,409 [INFO] clagn.scoring.clagn_score — HE1136-2304: FP penalty 0.50× → score 0.099 → 0.049 [host_contamination_risk(z<0.05,marginal_delta_mag)]
+2026-02-21 02:03:16,409 [WARNING] clagn.main — Sanity check: Mrk1018 FAILS criteria — delta_mag_w1=0.187 < 0.3 — replacing with next ranked source
+2026-02-21 02:03:16,409 [WARNING] clagn.main — Sanity check: Mrk590 FAILS criteria — delta_mag_w1=0.136 < 0.3; flux_ratio=1.53 < 2.0 — replacing with next ranked source
+2026-02-21 02:03:16,409 [WARNING] clagn.main — Sanity check: HE1136-2304 FAILS criteria — delta_mag_w1=0.228 < 0.3; flux_ratio=1.07 < 2.0 — replacing with next ranked source
+2026-02-21 02:03:16,409 [WARNING] clagn.main — No sources passed final sanity checks.
+2026-02-21 02:03:16,409 [INFO] clagn.main — 
+Top 3 CLAGN candidates:
+2026-02-21 02:03:16,409 [INFO] clagn.main — ------------------------------------------------------------
+2026-02-21 02:03:16,409 [INFO] clagn.main — # 1 | Mrk1018 | z=0.042 | Score=0.280 | CLAGN candidate — type ambiguous, spectroscopic followup req
+2026-02-21 02:03:16,409 [INFO] clagn.main — # 2 | Mrk590 | z=0.026 | Score=0.201 | CLAGN candidate — type ambiguous, spectroscopic followup req
+2026-02-21 02:03:16,409 [INFO] clagn.main — # 3 | HE1136-2304 | z=0.027 | Score=0.049 | CLAGN candidate — type ambiguous, spectroscopic followup req
+2026-02-21 02:03:16,409 [INFO] clagn.main — 
+Generating plots...
+2026-02-21 02:03:16,795 [INFO] clagn.output.plots — Saved plot: ./results/plots/rank01_Mrk1018.png
+2026-02-21 02:03:17,065 [INFO] clagn.output.plots — Saved plot: ./results/plots/rank02_Mrk590.png
+2026-02-21 02:03:17,354 [INFO] clagn.output.plots — Saved plot: ./results/plots/rank03_HE1136-2304.png
+2026-02-21 02:03:17,563 [INFO] clagn.output.plots — Saved summary grid: ./results/summary_grid.png
+2026-02-21 02:03:17,563 [INFO] clagn.main — 
+Writing output tables...
+2026-02-21 02:03:17,566 [INFO] clagn.output.tables — Wrote 3 candidates to ./results/top_candidates.csv
+2026-02-21 02:03:17,585 [INFO] clagn.output.tables — Wrote 3 candidates to ./results/top_candidates.fits (FITS)
+2026-02-21 02:03:17,586 [INFO] clagn.main — 
+Cross-validating against known CLAGN...
+2026-02-21 02:03:17,586 [INFO] clagn.utils.validation — Known CLAGN Mrk 1018 found at rank 1 (score=0.280, sep=0.0")
+2026-02-21 02:03:17,586 [INFO] clagn.utils.validation — Known CLAGN 1ES 1927+654 not found in pipeline input (nearest match at 338053.3")
+2026-02-21 02:03:17,587 [INFO] clagn.utils.validation — Known CLAGN NGC 2617 not found in pipeline input (nearest match at 173441.7")
+2026-02-21 02:03:17,587 [INFO] clagn.utils.validation — Known CLAGN Mrk 590 found at rank 2 (score=0.201, sep=0.0")
+2026-02-21 02:03:17,588 [INFO] clagn.utils.validation — Known CLAGN HE 1136-2304 found at rank 3 (score=0.049, sep=0.0")
+2026-02-21 02:03:17,588 [INFO] clagn.utils.validation — Known CLAGN NGC 4151 not found in pipeline input (nearest match at 227465.9")
+2026-02-21 02:03:17,588 [INFO] clagn.utils.validation — Known CLAGN SDSS J0159+0033 not found in pipeline input (nearest match at 6437.6")
+2026-02-21 02:03:17,588 [INFO] clagn.utils.validation — Known CLAGN SDSS J2336+0017 not found in pipeline input (nearest match at 135224.5")
+2026-02-21 02:03:17,588 [INFO] clagn.utils.validation — Pipeline recovered 3/3 known CLAGN in the input catalog (recovery rate = 100%)
+2026-02-21 02:03:17,589 [INFO] clagn.main — Recovery: 3/3 known CLAGN recovered (rate=100%)
+2026-02-21 02:03:17,589 [INFO] clagn.main —   Mrk 1018: rank #1, score=0.280
+2026-02-21 02:03:17,589 [INFO] clagn.main —   Mrk 590: rank #2, score=0.201
+2026-02-21 02:03:17,589 [INFO] clagn.main —   HE 1136-2304: rank #3, score=0.049
+2026-02-21 02:03:17,589 [INFO] clagn.main — 
+======================================================================
+2026-02-21 02:03:17,589 [INFO] clagn.main — PIPELINE COMPLETE
+2026-02-21 02:03:17,589 [INFO] clagn.main —   Output CSV:  ./results/top_candidates.csv
+2026-02-21 02:03:17,589 [INFO] clagn.main —   Plots:       ./results/plots/
+2026-02-21 02:03:17,589 [INFO] clagn.main —   Log:         ./results/pipeline.log
+2026-02-21 02:03:17,589 [INFO] clagn.main — ======================================================================
