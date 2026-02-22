@@ -22,6 +22,8 @@ import logging
 
 import numpy as np
 
+from ..config import WISE_SEASON_ANCHOR_MJD
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,8 +90,8 @@ def compute_delta_mag_correct(times, w1_flux_mjy, w1_flux_err_mjy, z=0.0):
     f = f[sort_idx]
     e = e[sort_idx]
 
-    # Assign each epoch to a 6-month season
-    season_id = np.floor((t - t.min()) / 182.5).astype(int)
+    # FLAW A2: Use global anchor so all sources have identical season boundaries
+    season_id = np.floor((t - WISE_SEASON_ANCHOR_MJD) / 182.625).astype(int)
 
     # Weighted mean flux per season (weight = 1/err^2)
     season_flux = {}

@@ -49,6 +49,7 @@ from .scoring.clagn_score import (
 )
 from .output.plots import plot_lightcurve_panel, plot_summary_grid
 from .output.tables import build_candidates_dataframe, write_output_csv, write_output_fits
+from .utils.provenance import write_provenance_sidecar
 from .utils.validation import validate_against_known_clagn
 
 # ---------------------------------------------------------------------------
@@ -626,6 +627,14 @@ def main():
         write_output_fits(candidates_df, fits_path)
     except Exception as exc:
         logger.warning(f"FITS output failed: {exc}")
+
+    # FLAW C1: Write provenance sidecar for reproducibility
+    try:
+        pipeline_config = vars(args)
+        sidecar_path = write_provenance_sidecar(csv_path, pipeline_config)
+        logger.info(f"Provenance sidecar: {sidecar_path}")
+    except Exception as exc:
+        logger.warning(f"Provenance sidecar failed: {exc}")
 
     # ---- Cross-validation ---------------------------------------------------
     logger.info("\nCross-validating against known CLAGN...")

@@ -35,6 +35,7 @@ from ..config import (
     WISE_HIBERNATION_MJD_END,
     WISE_ZERO_POINTS,
     WISE_NEOWISE_SEARCH_RADIUS_ARCSEC,
+    WISE_SEASON_ANCHOR_MJD,
     SIGMA_CLIP_SIGMA,
     SIGMA_CLIP_ITERS,
     flag_systematic_epochs,
@@ -504,11 +505,12 @@ def compute_wise_seasonal_structure(times: np.ndarray, fluxes: np.ndarray,
     if len(times) < 2:
         return pd.DataFrame()
 
-    t_min = times.min()
-    t_max = times.max()
+    # FLAW A2: Use global anchor so all sources have identical season boundaries
     bin_width = 182.625  # 6 months in days
+    first_bin = int(np.floor((times.min() - WISE_SEASON_ANCHOR_MJD) / bin_width))
+    last_bin  = int(np.floor((times.max() - WISE_SEASON_ANCHOR_MJD) / bin_width)) + 1
+    edges = WISE_SEASON_ANCHOR_MJD + np.arange(first_bin, last_bin + 1) * bin_width
 
-    edges = np.arange(t_min, t_max + bin_width, bin_width)
     rows = []
 
     for i in range(len(edges) - 1):
@@ -536,7 +538,8 @@ def compute_wise_seasonal_structure(times: np.ndarray, fluxes: np.ndarray,
             'mad_flux': mad_f,
             'weighted_mean_flux': wmean,
             'flux_rms': rms_f,
-            'season_label': f"S{i + 1:02d}",
+            'season_label': f"S{first_bin + i + 1:02d}",
+            'wise_season_anchor_mjd': WISE_SEASON_ANCHOR_MJD,
         })
 
     return pd.DataFrame(rows)
@@ -907,6 +910,138 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
         'w2_photometry_reliable': bool(w2_reliable),
         'saturation_flag': saturation_flag,
         'rejection_reason': None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# FLAW A7: Symmetric W1/W2 quality masks
+# ---------------------------------------------------------------------------
+
+def compute_wise_quality_masks(table):
+    """
+    Compute SEPARATE quality masks for W1 and W2.
+    Do NOT use a W1-only mask for both bands.
+
+    Returns three masks:
+    - mask_w1: epochs where W1 is reliable
+    - mask_w2: epochs where W2 is reliable
+    - mask_joint: epochs where BOTH are reliable (use for color/coherence)
+    """
+    # W1 quality criteria
+    mask_w1 = (
+        (pd.to_numeric(table['w1snr'],    errors='coerce').fillna(0) >= 5.0) &
+        (pd.to_numeric(table['w1rchi2'],  errors='coerce').fillna(99) < 5.0) &
+        (pd.to_numeric(table['w1sat'],    errors='coerce').fillna(1) == 0)   &
+        (pd.to_numeric(table['w1sigmpro'], errors='coerce').fillna(0) > 0)   &
+        np.array([str(c)[0] in ('0', 'H', 'h')
+                  for c in table['cc_flags']])  # W1 cc_flag char 0
+    )
+
+    # W2 quality criteria — SAME stringency as W1
+    mask_w2 = (
+        (pd.to_numeric(table['w2snr'],    errors='coerce').fillna(0) >= 5.0) &
+        (pd.to_numeric(table['w2rchi2'],  errors='coerce').fillna(99) < 5.0) &
+        (pd.to_numeric(table['w2sat'],    errors='coerce').fillna(1) == 0)   &
+        (pd.to_numeric(table['w2sigmpro'], errors='coerce').fillna(0) > 0)   &
+        np.array([str(c)[1] in ('0', 'H', 'h') if len(str(c)) > 1 else False
+                  for c in table['cc_flags']])  # W2 cc_flag char 1
+    )
+
+    mask_joint = mask_w1 & mask_w2
+
+    return mask_w1, mask_w2, mask_joint
+
+
+# ---------------------------------------------------------------------------
+# FLAW B1: Per-season flux and uncertainty with calibration floor
+# ---------------------------------------------------------------------------
+
+def compute_seasonal_flux_and_uncertainty(times, fluxes, errors, season_id):
+    """
+    Per season: compute weighted mean AND uncertainty of weighted mean.
+    Combine with calibration floor in quadrature.
+
+    Returns per-season dict with mean_flux, total_err, n_epochs,
+    intra_season_scatter, formal_err.
+    """
+    WISE_CALIBRATION_FLOOR_FRACTION = 0.028  # 2.8% from WISE docs (W1 RMS)
+
+    results = {}
+    for s in np.unique(season_id):
+        mask = season_id == s
+        if mask.sum() < 2:
+            continue
+
+        f_s = fluxes[mask]
+        e_s = errors[mask]
+        w_s = 1.0 / np.maximum(e_s ** 2, 1e-30)
+
+        # Weighted mean
+        mean_flux = np.average(f_s, weights=w_s)
+
+        # Formal uncertainty of weighted mean
+        formal_err = 1.0 / np.sqrt(w_s.sum())
+
+        # Intra-season scatter (may exceed formal error due to real variability)
+        scatter = np.sqrt(np.average((f_s - mean_flux) ** 2, weights=w_s))
+
+        # Calibration floor
+        cal_floor = WISE_CALIBRATION_FLOOR_FRACTION * abs(mean_flux)
+
+        # Total uncertainty: max of formal, scatter/sqrt(N), floor
+        total_err = np.sqrt(
+            max(formal_err, scatter / np.sqrt(mask.sum())) ** 2 +
+            cal_floor ** 2
+        )
+
+        results[int(s)] = {
+            'mean_flux': float(mean_flux),
+            'total_err': float(total_err),
+            'n_epochs': int(mask.sum()),
+            'intra_season_scatter': float(scatter),
+            'formal_err': float(formal_err),
+        }
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# FLAW B2: Per-epoch saturation check (not just global median)
+# ---------------------------------------------------------------------------
+
+def check_wise_saturation_complete(w1_mags, w2_mags, times):
+    """
+    Check saturation on per-epoch basis, not just median.
+
+    A source entering saturation during a bright state is the most
+    dangerous case — exactly the epochs most relevant to CLAGN detection.
+    """
+    W1_SAT_LIMIT = 8.0   # mag, Vega (from WISE docs)
+    W2_SAT_LIMIT = 6.7
+
+    w1_mags = np.asarray(w1_mags, dtype=float)
+    w2_mags = np.asarray(w2_mags, dtype=float)
+
+    w1_finite = w1_mags[np.isfinite(w1_mags)]
+    w2_finite = w2_mags[np.isfinite(w2_mags)]
+
+    w1_sat_mask = w1_finite < W1_SAT_LIMIT
+    w2_sat_mask = w2_finite < W2_SAT_LIMIT
+
+    return {
+        'w1_any_saturated': bool(w1_sat_mask.any()) if len(w1_sat_mask) > 0 else False,
+        'w2_any_saturated': bool(w2_sat_mask.any()) if len(w2_sat_mask) > 0 else False,
+        'n_w1_saturated_epochs': int(w1_sat_mask.sum()),
+        'n_w2_saturated_epochs': int(w2_sat_mask.sum()),
+        'w1_min_mag': float(w1_finite.min()) if len(w1_finite) > 0 else np.nan,
+        'w2_min_mag': float(w2_finite.min()) if len(w2_finite) > 0 else np.nan,
+        'w1_median_mag': float(np.median(w1_finite)) if len(w1_finite) > 0 else np.nan,
+        'saturation_flag': (
+            'saturated' if (
+                (w1_sat_mask.any() if len(w1_sat_mask) > 0 else False) or
+                (w2_sat_mask.any() if len(w2_sat_mask) > 0 else False)
+            ) else 'clear'
+        ),
     }
 
 

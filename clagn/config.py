@@ -30,6 +30,14 @@ WISE_ZERO_POINTS = {
 WISE_VEGA_ZERO_POINTS = WISE_ZERO_POINTS
 
 # ---------------------------------------------------------------------------
+# WISE global season anchor (FLAW A2)
+# All sources use this same anchor so season boundaries are identical.
+# MJD 55200 = 2010-01-14, approximate start of WISE all-sky survey.
+# Season 0: MJD 55200–55382, Season 1: MJD 55383–55565, etc.
+# ---------------------------------------------------------------------------
+WISE_SEASON_ANCHOR_MJD = 55200.0
+
+# ---------------------------------------------------------------------------
 # FIX 8: Sign convention documentation (enforced everywhere)
 # ---------------------------------------------------------------------------
 DELTA_MAG_SIGN_CONVENTION = """
@@ -104,8 +112,10 @@ def mag_to_flux_mjy(mag, mag_err, band):
     In mJy:     F_mJy = F0_Jy * 1000 * 10^(-0.4 * mag)
     Error:      dF = F * (0.4 * ln10) * dmag = F * 0.92103 * dmag
     """
-    mag = np.asarray(mag, dtype=float)
-    mag_err = np.asarray(mag_err, dtype=float)
+    # FLAW C3: Use atleast_1d for robust scalar handling
+    scalar_input = np.isscalar(mag)
+    mag     = np.atleast_1d(np.asarray(mag,     dtype=float))
+    mag_err = np.atleast_1d(np.asarray(mag_err, dtype=float))
     F0_mJy = WISE_VEGA_ZERO_POINTS[band] * 1000.0  # Jy -> mJy
 
     valid = (mag > 0) & (mag < 30) & np.isfinite(mag)
@@ -117,9 +127,9 @@ def mag_to_flux_mjy(mag, mag_err, band):
         np.nan
     )
 
-    # Return scalars if scalar input
-    if flux_mjy.ndim == 0:
-        return float(flux_mjy), float(flux_err_mjy)
+    # Return scalar if scalar was given
+    if scalar_input:
+        return float(flux_mjy[0]), float(flux_err_mjy[0])
     return flux_mjy, flux_err_mjy
 
 
@@ -130,8 +140,10 @@ def flux_mjy_to_mag(flux_mjy, flux_err_mjy, band):
     mag = -2.5 * log10(flux_mJy / F0_mJy)
     dmag = (2.5 / ln10) * dflux / flux = 1.08574 * dflux / flux
     """
-    flux_mjy = np.asarray(flux_mjy, dtype=float)
-    flux_err_mjy = np.asarray(flux_err_mjy, dtype=float)
+    # FLAW C3: Use atleast_1d for robust scalar handling
+    scalar_input = np.isscalar(flux_mjy)
+    flux_mjy     = np.atleast_1d(np.asarray(flux_mjy,     dtype=float))
+    flux_err_mjy = np.atleast_1d(np.asarray(flux_err_mjy, dtype=float))
     F0_mJy = WISE_VEGA_ZERO_POINTS[band] * 1000.0
     valid = (flux_mjy > 0) & np.isfinite(flux_mjy)
     mag = np.where(valid, -2.5 * np.log10(flux_mjy / F0_mJy), np.nan)
@@ -140,8 +152,8 @@ def flux_mjy_to_mag(flux_mjy, flux_err_mjy, band):
         1.08574 * flux_err_mjy / flux_mjy,
         np.nan
     )
-    if mag.ndim == 0:
-        return float(mag), float(mag_err)
+    if scalar_input:
+        return float(mag[0]), float(mag_err[0])
     return mag, mag_err
 
 

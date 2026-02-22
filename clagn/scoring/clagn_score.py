@@ -24,6 +24,7 @@ from ..config import (
     FP_HOST_SCORE_PENALTY, FP_ARTIFACT_SCORE_PENALTY,
     SIGMA_EXCESS_NORM_FLUX_MJY, SIGMA_EXCESS_LUM_SLOPE,
     MIN_MAG_CHANGE_W1,
+    WISE_SEASON_ANCHOR_MJD,
 )
 from ..utils.crossmatch import galactic_latitude
 from ..models.variability import compute_delta_mag_correct, compute_delta_mag_w2
@@ -309,10 +310,13 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
     else:
         e2 = f2 * 0.05
 
-    # Bin into 6-month seasons
-    season_id = np.floor((t - t.min()) / 182.5).astype(int)
+    # FLAW A2: Use global anchor so season IDs are consistent across sources
+    # FLAW B3: Compute per-season error for uncertainty-weighted coherence
+    season_id = np.floor((t - WISE_SEASON_ANCHOR_MJD) / 182.625).astype(int)
     w1_season = {}
     w2_season = {}
+    w1_season_err = {}
+    w2_season_err = {}
 
     for s in np.unique(season_id):
         mask = season_id == s
@@ -322,21 +326,34 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
         w2_weights = 1.0 / np.maximum(e2[mask] ** 2, 1e-30)
         w1_season[s] = float(np.average(f1[mask], weights=w1_weights))
         w2_season[s] = float(np.average(f2[mask], weights=w2_weights))
+        # Formal uncertainty of weighted mean
+        w1_season_err[s] = float(1.0 / np.sqrt(w1_weights.sum()))
+        w2_season_err[s] = float(1.0 / np.sqrt(w2_weights.sum()))
 
     common_seasons = sorted(set(w1_season) & set(w2_season))
-    if len(common_seasons) < 3:
+    # FLAW B3: Require >= 4 joint seasons (up from 3)
+    if len(common_seasons) < 4:
         return 0.0, np.nan, False, 'insufficient_data'
 
     w1_vals = np.array([w1_season[s] for s in common_seasons])
     w2_vals = np.array([w2_season[s] for s in common_seasons])
+    w1_errs = np.array([w1_season_err[s] for s in common_seasons])
+    w2_errs = np.array([w2_season_err[s] for s in common_seasons])
 
-    # Pearson r
-    try:
-        from scipy.stats import pearsonr
-        pearson_r, _ = pearsonr(w1_vals, w2_vals)
-        pearson_r = float(pearson_r) if np.isfinite(pearson_r) else 0.0
-    except Exception:
-        pearson_r = float(np.corrcoef(w1_vals, w2_vals)[0, 1])
+    # FLAW B3: Uncertainty-weighted Pearson r
+    combined_weights = 1.0 / np.maximum(w1_errs ** 2 + w2_errs ** 2, 1e-30)
+    combined_weights /= combined_weights.sum()
+
+    w1_wmean = np.average(w1_vals, weights=combined_weights)
+    w2_wmean = np.average(w2_vals, weights=combined_weights)
+
+    cov = np.sum(combined_weights * (w1_vals - w1_wmean) * (w2_vals - w2_wmean))
+    std1 = np.sqrt(np.sum(combined_weights * (w1_vals - w1_wmean) ** 2))
+    std2 = np.sqrt(np.sum(combined_weights * (w2_vals - w2_wmean) ** 2))
+
+    pearson_r = float(cov / (std1 * std2 + 1e-10))
+    if not np.isfinite(pearson_r):
+        pearson_r = 0.0
 
     # Same-direction change
     seasons_sorted = sorted(common_seasons)
@@ -350,14 +367,13 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
         same_direction = (np.sign(w1_vals[-1] - w1_vals[0]) ==
                           np.sign(w2_vals[-1] - w2_vals[0]))
 
-    # Coherence score: combines Pearson r and same-direction bonus
-    coherence_score = float(np.clip((pearson_r + 1.0) / 2.0, 0.0, 1.0))
-    if same_direction:
-        coherence_score = float(np.clip(coherence_score + 0.1, 0.0, 1.0))
+    # Coherence score: combines weighted Pearson r and same-direction bonus
+    coherence_score = max(0.0, pearson_r) * (1.0 if same_direction else 0.5)
+    coherence_score = float(np.clip(coherence_score, 0.0, 1.0))
 
     if pearson_r > 0.6 and same_direction:
         coherence_flag = 'coherent'
-    elif pearson_r > 0.3 or same_direction:
+    elif pearson_r > 0.3:
         coherence_flag = 'marginal'
     else:
         coherence_flag = 'incoherent'
@@ -517,8 +533,10 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
     score_gaia = _norm_gaia_var(gaia_var_flag)
 
     # ---- FIX 6: Host galaxy contamination -----------------------------------
+    # FLAW B4: Labels as estimate (not source-specific SED decomposition)
     f_host, f_agn, contamination_flag = estimate_host_contamination_fraction(z)
-    delta_mag_host_corrected = correct_delta_mag_for_host(delta_mag_w1, f_agn)
+    delta_mag_host_corrected_estimate = correct_delta_mag_for_host(delta_mag_w1, f_agn)
+    host_fraction_prior_estimate = f_host
 
     # ---- FIX 13: W1/W2 coherence check -------------------------------------
     w1_w2_coherence_score = 0.5   # default (neutral)
@@ -574,11 +592,15 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
         'composite':            float(composite),
         'label':                label,
         # FIX 1, 8: Signed delta_mag from seasonal median flux method
-        'delta_mag_w1':                delta_mag_w1,
-        'delta_mag_w2':                delta_mag_w2,
-        'delta_mag_method':            delta_mag_method,
-        'delta_mag_host_corrected':    delta_mag_host_corrected,
-        'host_contamination_flag':     contamination_flag,
+        'delta_mag_w1':                          delta_mag_w1,
+        'delta_mag_w2':                          delta_mag_w2,
+        'delta_mag_method':                      delta_mag_method,
+        # FLAW B4: renamed to clearly label as estimate
+        'delta_mag_host_corrected_estimate':     delta_mag_host_corrected_estimate,
+        'host_fraction_prior_estimate':          host_fraction_prior_estimate,
+        'host_model':                            'redshift_prior_heuristic_Assef2013',
+        'host_correction_note':                  'Rough prior; not source-specific SED decomposition',
+        'host_contamination_flag':               contamination_flag,
         'delta_color':                 delta_color,
         'sigma_excess':                sigma_excess,
         'frac_change':                 frac_change,

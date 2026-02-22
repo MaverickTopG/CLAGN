@@ -26,6 +26,33 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# FLAW B5: Hard-block unreliable tau from all physics calculations
+# ---------------------------------------------------------------------------
+
+def _require_reliable_tau(drw_result, context='unknown'):
+    """
+    Call this before any physical computation that uses DRW tau.
+    Raises ValueError if tau is not reliable.
+
+    Parameters
+    ----------
+    drw_result : dict with 'tau_reliable' and 'unreliable_reason' keys
+    context    : str, name of the calling computation (for error message)
+
+    Raises
+    ------
+    ValueError if tau is not reliable
+    """
+    if not drw_result.get('tau_reliable', False):
+        reason = drw_result.get('unreliable_reason', 'unknown')
+        raise ValueError(
+            f"Attempted to use unreliable DRW tau in {context}. "
+            f"Reason: {reason}. "
+            f"This computation must be skipped for this source."
+        )
+
 # ---------------------------------------------------------------------------
 # Physical constants
 # ---------------------------------------------------------------------------

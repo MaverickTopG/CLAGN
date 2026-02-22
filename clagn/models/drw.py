@@ -22,6 +22,15 @@ from ..config import (
     DRW_MAX_EPOCHS_FOR_FULL_FIT,
 )
 
+# FLAW A5: Bounds constants for celerite2 optimization (must match numpy fallback)
+LOG_TAU_MIN = np.log(2.0)       # tau_min = 2 days
+LOG_TAU_MAX = np.log(5000.0)    # tau_max = 5000 days
+LOG_SIG_MIN = np.log(1e-4)      # sigma_min = 0.0001 mJy
+LOG_SIG_MAX = np.log(1e4)       # sigma_max = 10000 mJy
+# Convert to rho-space: rho ≈ 2π*tau for SHOTerm Q=0.5
+LOG_RHO_MIN = LOG_TAU_MIN + np.log(2 * np.pi)
+LOG_RHO_MAX = LOG_TAU_MAX + np.log(2 * np.pi)
+
 logger = logging.getLogger(__name__)
 
 
@@ -177,6 +186,38 @@ def _fit_drw_numpy(times, fluxes, flux_errors):
     }
 
 
+def fit_drw_numpy_fallback(times_rest, fluxes_mjy, flux_errors_mjy):
+    """
+    NumPy/scipy fallback DRW fit with CRITICAL mean subtraction.
+
+    FLAW A3 FIX: Must subtract weighted mean before computing likelihood.
+    If the mean is not subtracted, the optimizer partly explains the large
+    DC offset as stochastic variability, biasing both tau and sigma.
+
+    Parameters
+    ----------
+    times_rest : array, rest-frame MJD
+    fluxes_mjy : array, flux density in mJy
+    flux_errors_mjy : array, flux uncertainty in mJy
+
+    Returns
+    -------
+    result : dict with all _fit_drw_numpy keys plus:
+        mu_flux_mjy, drw_fit_on_centered_flux, sigma_drw_mjy
+    """
+    weights = 1.0 / np.maximum(flux_errors_mjy ** 2, 1e-30)
+    mu_flux = float(np.average(fluxes_mjy, weights=weights))
+    f_centered = fluxes_mjy - mu_flux
+
+    result = _fit_drw_numpy(times_rest, f_centered, flux_errors_mjy)
+
+    result['mu_flux_mjy'] = mu_flux
+    result['drw_fit_on_centered_flux'] = True
+    result['sigma_drw_mjy'] = result['sigma_drw']   # alias for test verification
+
+    return result
+
+
 def check_drw_reliability(tau_rest_days, baseline_obs_days, z):
     """
     Apply the Kozlowski+2017 reliability criterion for DRW timescales.
@@ -272,7 +313,8 @@ def fit_drw_map(times, fluxes, flux_errors, z=0.0):
         import celerite2
         map_result = _fit_drw_celerite2(times_rest, fluxes, flux_errors)
     except ImportError:
-        map_result = _fit_drw_numpy(times_rest, fluxes, flux_errors)
+        # FLAW A3: use fallback with mean subtraction
+        map_result = fit_drw_numpy_fallback(times_rest, fluxes, flux_errors)
 
     tau = map_result['tau_rest_days']
     sigma = map_result['sigma_drw']
@@ -318,34 +360,73 @@ def fit_drw_map(times, fluxes, flux_errors, z=0.0):
 
 
 def _fit_drw_celerite2(times_rest, fluxes, flux_errors):
-    """celerite2-based DRW fit (optional fast path)."""
+    """celerite2-based DRW fit (optional fast path).
+
+    FLAW A5 FIX: Add parameter bounds matching the numpy fallback.
+    Post-fit: flag if solution is at boundary (tau_reliable=False).
+    """
     import celerite2
     import celerite2.terms as terms
 
     # celerite2 DRW term: SHOTerm with Q=0.5 approximates Ornstein-Uhlenbeck
     t_s, f_s, e_s, _ = _maybe_subsample(times_rest, fluxes, flux_errors)
 
+    # Subtract weighted mean before fitting (FLAW A3 consistency)
+    weights = 1.0 / np.maximum(e_s ** 2, 1e-30)
+    mu_f = float(np.average(f_s, weights=weights))
+    f_centered = f_s - mu_f
+
     def nll(params):
         log_sigma, log_rho = params
-        term = terms.SHOTerm(sigma=np.exp(log_sigma), rho=np.exp(log_rho), Q=0.5)
-        gp = celerite2.GaussianProcess(term, mean=np.mean(f_s))
-        gp.compute(t_s, yerr=e_s)
-        return -gp.log_likelihood(f_s)
+        try:
+            term = terms.SHOTerm(sigma=np.exp(log_sigma), rho=np.exp(log_rho), Q=0.5)
+            gp = celerite2.GaussianProcess(term, mean=0.0)
+            gp.compute(t_s, yerr=e_s)
+            return -gp.log_likelihood(f_centered)
+        except Exception:
+            return 1e10
 
-    result = minimize(nll, [0.0, np.log(200.0)], method='L-BFGS-B')
+    # FLAW A5: Add bounds matching the numpy fallback path
+    bounds = [(LOG_SIG_MIN, LOG_SIG_MAX), (LOG_RHO_MIN, LOG_RHO_MAX)]
+    x0 = [0.0, np.log(200.0 * 2.0 * np.pi)]  # sigma=1, tau=200d in rho-space
+
+    result = minimize(
+        nll,
+        x0,
+        method='L-BFGS-B',
+        bounds=bounds,
+        options={'maxiter': 1000, 'ftol': 1e-9},
+    )
     log_sigma, log_rho = result.x
     # rho ≈ 2πτ for SHO → τ ≈ rho/(2π)
     tau = float(np.exp(log_rho) / (2.0 * np.pi))
     sigma = float(np.exp(log_sigma))
 
-    return {
+    # FLAW A5: Check if solution is at a parameter boundary
+    at_boundary = (
+        log_rho < LOG_RHO_MIN + 0.1 or
+        log_rho > LOG_RHO_MAX - 0.1 or
+        log_sigma < LOG_SIG_MIN + 0.1 or
+        log_sigma > LOG_SIG_MAX - 0.1
+    )
+
+    drw_result = {
         'tau_rest_days': tau,
         'sigma_drw': sigma,
         'log_like': float(-result.fun),
         'converged': result.success,
         'log_sigma_map': log_sigma,
-        'log_tau_map': np.log(tau),
+        'log_tau_map': np.log(max(tau, 1e-10)),
+        'mu_flux_mjy': mu_f,
+        'drw_fit_on_centered_flux': True,
+        'sigma_drw_mjy': sigma,
     }
+
+    if at_boundary:
+        drw_result['tau_reliable'] = False
+        drw_result['unreliable_reason'] = 'solution_at_parameter_boundary'
+
+    return drw_result
 
 
 def fit_drw_mcmc(times, fluxes, flux_errors, z=0.0,

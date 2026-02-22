@@ -13,6 +13,16 @@ from ..config import (
     MAX_PROPER_MOTION_SIG, MAX_RUWE,
 )
 
+# GAIA query columns including parallax (FLAW A6)
+_GAIA_COLUMNS_WITH_PARALLAX = (
+    "source_id, ra, dec, pmra, pmra_error, pmdec, pmdec_error, "
+    "parallax, parallax_error, "
+    "ruwe, astrometric_excess_noise, astrometric_excess_noise_sig, "
+    "phot_g_mean_mag, phot_g_mean_flux_over_error, "
+    "phot_variable_flag, non_single_star, "
+    "classprob_dsc_combmod_quasar, classprob_dsc_combmod_galaxy"
+)
+
 logger = logging.getLogger(__name__)
 
 # Suppress the ESA authentication warning at import time
@@ -35,6 +45,10 @@ def _null_gaia_result():
         'gaia_variability_score': 0.0,
         'classprob_quasar': np.nan,
         'classprob_galaxy': np.nan,
+        # FLAW A6: parallax fields
+        'parallax': np.nan,
+        'parallax_error': np.nan,
+        'gaia_parallax_sig': np.nan,
     }
 
 
@@ -63,8 +77,9 @@ def query_gaia_dr3(ra, dec, source_id):
 
     radius_deg = GAIA_SEARCH_RADIUS_ARCSEC / 3600.0
 
+    # FLAW A6: Use columns including parallax
     query = (
-        f"SELECT TOP 5 {GAIA_COLUMNS} "
+        f"SELECT TOP 5 {_GAIA_COLUMNS_WITH_PARALLAX} "
         f"FROM {GAIA_MAIN_TABLE} "
         f"WHERE CONTAINS("
         f"  POINT('ICRS', ra, dec),"
@@ -121,6 +136,12 @@ def query_gaia_dr3(ra, dec, source_id):
     classprob_galaxy = _safe_float('classprob_dsc_combmod_galaxy')
     g_mag = _safe_float('phot_g_mean_mag')
     gaia_id = row['source_id']
+    # FLAW A6: Extract parallax
+    parallax = _safe_float('parallax')
+    parallax_error = _safe_float('parallax_error')
+    plx_sig = (abs(parallax) / parallax_error
+               if (np.isfinite(parallax) and np.isfinite(parallax_error) and parallax_error > 0)
+               else np.nan)
 
     # ---- Proper motion significance -----------------------------------------
     pm_sig, gaia_pm_unknown = compute_pm_significance(
@@ -166,6 +187,10 @@ def query_gaia_dr3(ra, dec, source_id):
         'gaia_variability_score': gaia_var_score,
         'classprob_quasar': classprob_quasar,
         'classprob_galaxy': classprob_galaxy,
+        # FLAW A6: parallax for foreground star rejection
+        'parallax': parallax,
+        'parallax_error': parallax_error,
+        'gaia_parallax_sig': float(plx_sig) if np.isfinite(plx_sig) else np.nan,
     }
 
 
@@ -246,6 +271,53 @@ def check_point_source_quality(ruwe, astrometric_excess_noise_sig):
         return True, f'excess_astrometric_noise_sig={astrometric_excess_noise_sig:.1f}'
 
     return True, 'clean_point_source'
+
+
+def is_foreground_star(gaia_row):
+    """
+    FLAW A6: Reject foreground stars using ALL three GAIA criteria.
+
+    Reject if ANY of these three criteria trigger:
+    1. Proper motion significance > 3σ
+    2. Parallax significance > 3σ (direct distance measurement — strongest test)
+    3. RUWE > 1.4
+
+    Parameters
+    ----------
+    gaia_row : dict (output of query_gaia_dr3)
+
+    Returns
+    -------
+    is_star : bool
+    reasons : list of str (empty if not a star)
+    """
+    reasons = []
+
+    # 1. Proper motion significance
+    try:
+        pm_sig = gaia_row.get('pm_sig', np.nan)
+        if np.isfinite(pm_sig) and pm_sig > MAX_PROPER_MOTION_SIG:
+            reasons.append(f'pm_sig={pm_sig:.1f}')
+    except (KeyError, TypeError):
+        pass
+
+    # 2. Parallax (strongest test — direct distance measurement)
+    try:
+        plx_sig = gaia_row.get('gaia_parallax_sig', np.nan)
+        if np.isfinite(plx_sig) and plx_sig > 3.0:
+            reasons.append(f'parallax_sig={plx_sig:.1f}')
+    except (KeyError, TypeError):
+        pass
+
+    # 3. RUWE
+    try:
+        ruwe = gaia_row.get('ruwe', np.nan)
+        if np.isfinite(ruwe) and ruwe > MAX_RUWE:
+            reasons.append(f'ruwe={ruwe:.2f}')
+    except (KeyError, TypeError):
+        pass
+
+    return len(reasons) > 0, reasons
 
 
 def check_gaia_quasar_classification(classprob_quasar, source_id=''):
