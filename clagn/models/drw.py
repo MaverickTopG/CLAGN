@@ -177,20 +177,71 @@ def _fit_drw_numpy(times, fluxes, flux_errors):
     }
 
 
+def check_drw_reliability(tau_rest_days, baseline_obs_days, z):
+    """
+    Apply the Kozlowski+2017 reliability criterion for DRW timescales.
+
+    The baseline (in rest frame) must be >= 10 * tau_rest for tau to be
+    reliably measured. Sources failing this test can still be CLAGN candidates
+    based on other metrics, but their DRW tau should not be used for
+    physics (M_BH estimation, disk timescales).
+
+    Also checks: tau must not be hitting prior bounds (LOG_TAU_MIN=1.0,
+    LOG_TAU_MAX=8.5). If within 0.3 of the prior bounds, tau is unconstrained.
+
+    Parameters
+    ----------
+    tau_rest_days : float
+        Fitted DRW rest-frame timescale
+    baseline_obs_days : float
+        Observer-frame light curve baseline
+    z : float
+        Redshift
+
+    Returns
+    -------
+    reliable : bool
+    reason : str
+    """
+    if not np.isfinite(tau_rest_days) or tau_rest_days <= 0:
+        return False, "tau_rest is not finite or non-positive"
+
+    baseline_rest_days = baseline_obs_days / max(1.0 + z, 1.0)
+
+    if tau_rest_days > baseline_rest_days / 10.0:
+        return False, (
+            f"tau_rest={tau_rest_days:.0f}d > baseline_rest/10="
+            f"{baseline_rest_days/10:.0f}d — Kozlowski+2017 criterion fails"
+        )
+
+    # Check: tau should not be hitting prior bounds
+    log_tau = np.log(tau_rest_days)
+    if log_tau < DRW_LOG_TAU_MIN + 0.3:
+        return False, "tau at lower prior boundary — unconstrained"
+    if log_tau > DRW_LOG_TAU_MAX - 0.3:
+        return False, "tau at upper prior boundary — unconstrained"
+
+    return True, "OK"
+
+
 def fit_drw_map(times, fluxes, flux_errors, z=0.0):
     """
     Fit DRW model via Maximum A Posteriori (MAP) optimization.
 
     Fast first-pass; results feed MCMC for final candidates.
 
-    IMPORTANT: Converts to rest-frame times before fitting:
+    IMPORTANT: Fits in FLUX SPACE (mJy). NEVER in magnitude space.
+    DRW GP likelihood assumes Gaussian residuals — satisfied in flux space,
+    NOT in magnitude space (MacLeod+2010, Kelly+2009).
+
+    Converts to rest-frame times before fitting:
         times_rest = times_obs / (1 + z)
     All returned timescales are rest-frame.
 
     Parameters
     ----------
     times       : array, MJD (observer frame)
-    fluxes      : array, flux density in mJy
+    fluxes      : array, flux density in mJy (NOT magnitudes)
     flux_errors : array, flux uncertainty in mJy
     z           : float, source redshift
 
@@ -198,14 +249,23 @@ def fit_drw_map(times, fluxes, flux_errors, z=0.0):
     -------
     result : dict with keys:
         tau_rest_days, sigma_drw, log_like, converged,
-        residuals, pred_mean, pred_std
+        residuals, pred_mean, pred_std,
+        sigma_drw_mag_equiv, tau_reliable, unreliable_reason
     """
     times = np.asarray(times, dtype=float)
     fluxes = np.asarray(fluxes, dtype=float)
     flux_errors = np.asarray(flux_errors, dtype=float)
 
+    # FIX 3: Sanity check — input must be in flux space (mJy range)
+    median_val = float(np.nanmedian(fluxes))
+    assert 0.001 < median_val < 100000, (
+        f"Median flux {median_val:.3f} is outside mJy range [0.001, 100000]. "
+        f"Did you accidentally pass magnitudes instead of fluxes?"
+    )
+
     # ---- Rest-frame time correction (Ricci+2022; mandatory) -----------------
-    times_rest = times / (1.0 + z)
+    times_rest = times / (1.0 + max(z, 0.0))
+    baseline_obs_days = float(times.max() - times.min()) if len(times) > 1 else 1.0
 
     # ---- Try celerite2 first; fall back to numpy ----------------------------
     try:
@@ -231,9 +291,27 @@ def fit_drw_map(times, fluxes, flux_errors, z=0.0):
     map_result['pred_std'] = pred_std
     map_result['times_rest'] = times_rest
 
+    # FIX 3: DRW sigma in magnitude-equivalent units
+    # sigma_drw_mag_equiv = 2.5 * log10(1 + sigma_mJy / median_flux_mJy)
+    median_flux = float(np.nanmedian(fluxes))
+    if median_flux > 0 and sigma > 0:
+        sigma_drw_mag_equiv = float(2.5 * np.log10(1.0 + sigma / median_flux))
+    else:
+        sigma_drw_mag_equiv = np.nan
+    map_result['sigma_drw_mag_equiv'] = sigma_drw_mag_equiv
+
+    # FIX 5: DRW reliability check (Kozlowski+2017)
+    tau_reliable, unreliable_reason = check_drw_reliability(
+        tau, baseline_obs_days, z
+    )
+    map_result['tau_reliable'] = tau_reliable
+    map_result['unreliable_reason'] = unreliable_reason if not tau_reliable else None
+
     logger.debug(
         f"DRW MAP: τ_rest={tau:.1f} d, σ={sigma:.4f} mJy, "
-        f"log_like={map_result['log_like']:.1f}"
+        f"σ_mag_equiv={sigma_drw_mag_equiv:.4f}, "
+        f"log_like={map_result['log_like']:.1f}, "
+        f"tau_reliable={tau_reliable}"
     )
 
     return map_result
@@ -247,13 +325,11 @@ def _fit_drw_celerite2(times_rest, fluxes, flux_errors):
     # celerite2 DRW term: SHOTerm with Q=0.5 approximates Ornstein-Uhlenbeck
     t_s, f_s, e_s, _ = _maybe_subsample(times_rest, fluxes, flux_errors)
 
-    term = terms.SHOTerm(sigma=1.0, rho=100.0, Q=0.5)
-    gp = celerite2.GaussianProcess(term, mean=np.mean(f_s))
-    gp.compute(t_s, yerr=e_s)
-
     def nll(params):
         log_sigma, log_rho = params
-        gp.set_parameter_vector([log_sigma, log_rho])
+        term = terms.SHOTerm(sigma=np.exp(log_sigma), rho=np.exp(log_rho), Q=0.5)
+        gp = celerite2.GaussianProcess(term, mean=np.mean(f_s))
+        gp.compute(t_s, yerr=e_s)
         return -gp.log_likelihood(f_s)
 
     result = minimize(nll, [0.0, np.log(200.0)], method='L-BFGS-B')
@@ -354,15 +430,34 @@ def fit_drw_mcmc(times, fluxes, flux_errors, z=0.0,
         f"acceptance={acceptance_fraction:.2f}"
     )
 
+    tau_median = float(np.median(tau_samples))
+    sigma_median = float(np.median(sigma_samples))
+    baseline_obs_days = float(np.asarray(times, dtype=float).ptp())
+
+    # FIX 5: Reliability check
+    tau_reliable, unreliable_reason = check_drw_reliability(
+        tau_median, baseline_obs_days, z
+    )
+
+    # FIX 3: sigma_drw_mag_equiv
+    median_flux = float(np.nanmedian(fluxes))
+    sigma_drw_mag_equiv = (
+        float(2.5 * np.log10(1.0 + sigma_median / median_flux))
+        if median_flux > 0 and sigma_median > 0 else np.nan
+    )
+
     return {
-        'tau_rest_days':  float(np.median(tau_samples)),
+        'tau_rest_days':  tau_median,
         'tau_lo':         float(np.percentile(tau_samples, 16)),
         'tau_hi':         float(np.percentile(tau_samples, 84)),
-        'sigma_drw':      float(np.median(sigma_samples)),
+        'sigma_drw':      sigma_median,
         'sigma_lo':       float(np.percentile(sigma_samples, 16)),
         'sigma_hi':       float(np.percentile(sigma_samples, 84)),
+        'sigma_drw_mag_equiv': sigma_drw_mag_equiv,
         'samples':        chain,
         'acceptance_fraction': acceptance_fraction,
+        'tau_reliable':   tau_reliable,
+        'unreliable_reason': unreliable_reason if not tau_reliable else None,
     }
 
 

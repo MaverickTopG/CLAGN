@@ -6,20 +6,240 @@ Never hardcode values in other modules.
 
 References:
     Jarrett et al. 2011 (WISE zero points)
+    Wright et al. 2010, AJ 140, 1868 (WISE mission, zero points)
     Stern et al. 2012, ApJ 753 30 (WISE AGN color cut)
     Ricci & Trakhtenbrot 2022, arXiv:2211.05132
     Kelly et al. 2009, ApJ 698 895 (DRW model)
+    Kozlowski et al. 2017, arXiv:1611.08248 (DRW reliability)
 """
 
+import numpy as np
+
 # ---------------------------------------------------------------------------
-# WISE Vega zero points (Jarrett et al. 2011)
+# WISE Vega zero points (Wright et al. 2010, Table 1 — AUTHORITATIVE VALUES)
+# These MUST match Wright+2010 exactly. Any other value is wrong.
 # ---------------------------------------------------------------------------
 WISE_ZERO_POINTS = {
-    'W1': 309.540,   # Jy
-    'W2': 171.787,   # Jy
+    'W1': 309.540,   # Jy (Wright+2010 Table 1)
+    'W2': 171.787,   # Jy (Wright+2010 Table 1)
     'W3': 31.674,    # Jy
     'W4': 8.363      # Jy
 }
+
+# Alias for use in new functions
+WISE_VEGA_ZERO_POINTS = WISE_ZERO_POINTS
+
+# ---------------------------------------------------------------------------
+# FIX 8: Sign convention documentation (enforced everywhere)
+# ---------------------------------------------------------------------------
+DELTA_MAG_SIGN_CONVENTION = """
+SIGN CONVENTION — ENFORCED EVERYWHERE IN THIS CODEBASE
+=======================================================
+
+delta_mag is defined as:
+    delta_mag = mag_early - mag_late
+             = -2.5 * log10(F_early / F_late)
+             = +2.5 * log10(F_late / F_early)
+
+POSITIVE delta_mag = source BRIGHTENED (flux INCREASED)
+    = CS-AGN Turn-ON event
+    = accretion rate increased
+    = W1 flux went UP
+
+NEGATIVE delta_mag = source FADED (flux DECREASED)
+    = CS-AGN Turn-OFF event
+    = accretion rate decreased
+    = W1 flux went DOWN
+
+flux_ratio is defined as:
+    flux_ratio = F_late / F_early
+
+flux_ratio > 1 = source brightened (= positive delta_mag)
+flux_ratio < 1 = source faded     (= negative delta_mag)
+
+Relationship:
+    delta_mag = +2.5 * log10(flux_ratio)
+    flux_ratio = 10^(delta_mag / 2.5)
+
+For CLAGN detection threshold: |delta_mag| >= 0.3
+(both turn-on and turn-off events qualify)
+
+DO NOT use abs() on delta_mag in scoring.
+DO NOT use max(mags) - min(mags).
+DO NOT use single-epoch comparison.
+USE: seasonal median flux method (compute_delta_mag_correct in variability.py)
+"""
+
+
+# ---------------------------------------------------------------------------
+# FIX 2: Magnitude <-> flux conversion functions (Wright+2010 zero points)
+# ---------------------------------------------------------------------------
+
+def mag_to_flux_mjy(mag, mag_err, band):
+    """
+    Convert WISE Vega magnitude to flux density in mJy.
+
+    Parameters
+    ----------
+    mag : float or array
+        WISE Vega magnitude (w1mpro, w2mpro)
+    mag_err : float or array
+        Magnitude uncertainty (w1sigmpro, w2sigmpro)
+    band : str
+        'W1' or 'W2'
+
+    Returns
+    -------
+    flux_mjy : float or array
+        Flux density in mJy (millijansky)
+    flux_err_mjy : float or array
+        Flux uncertainty in mJy
+
+    Notes
+    -----
+    WISE zero points from Wright+2010, Table 1.
+    F0(W1) = 309.540 Jy, F0(W2) = 171.787 Jy.
+
+    Conversion: F = F0 * 10^(-0.4 * mag)
+    In mJy:     F_mJy = F0_Jy * 1000 * 10^(-0.4 * mag)
+    Error:      dF = F * (0.4 * ln10) * dmag = F * 0.92103 * dmag
+    """
+    mag = np.asarray(mag, dtype=float)
+    mag_err = np.asarray(mag_err, dtype=float)
+    F0_mJy = WISE_VEGA_ZERO_POINTS[band] * 1000.0  # Jy -> mJy
+
+    valid = (mag > 0) & (mag < 30) & np.isfinite(mag)
+    flux_mjy = np.where(valid, F0_mJy * 10.0 ** (-0.4 * mag), np.nan)
+
+    flux_err_mjy = np.where(
+        valid & (mag_err > 0),
+        flux_mjy * 0.92103 * mag_err,
+        np.nan
+    )
+
+    # Return scalars if scalar input
+    if flux_mjy.ndim == 0:
+        return float(flux_mjy), float(flux_err_mjy)
+    return flux_mjy, flux_err_mjy
+
+
+def flux_mjy_to_mag(flux_mjy, flux_err_mjy, band):
+    """
+    Convert flux density in mJy back to WISE Vega magnitude.
+
+    mag = -2.5 * log10(flux_mJy / F0_mJy)
+    dmag = (2.5 / ln10) * dflux / flux = 1.08574 * dflux / flux
+    """
+    flux_mjy = np.asarray(flux_mjy, dtype=float)
+    flux_err_mjy = np.asarray(flux_err_mjy, dtype=float)
+    F0_mJy = WISE_VEGA_ZERO_POINTS[band] * 1000.0
+    valid = (flux_mjy > 0) & np.isfinite(flux_mjy)
+    mag = np.where(valid, -2.5 * np.log10(flux_mjy / F0_mJy), np.nan)
+    mag_err = np.where(
+        valid & (flux_err_mjy > 0),
+        1.08574 * flux_err_mjy / flux_mjy,
+        np.nan
+    )
+    if mag.ndim == 0:
+        return float(mag), float(mag_err)
+    return mag, mag_err
+
+
+# ---------------------------------------------------------------------------
+# FIX 4: NEOWISE W2 systematic flagging
+# ---------------------------------------------------------------------------
+WISE_KNOWN_SYSTEMATICS = [
+    {
+        'band': 'W2',
+        'mjd_start': 57000,
+        'mjd_end': 57071,
+        'description': 'Incorrect ZP adjustment applied in W2 (NEOWISE docs)',
+        'action': 'flag_epochs',
+        'magnitude_offset': 0.01,
+    },
+    {
+        'band': 'W1',
+        'mjd_start': 55400,
+        'mjd_end': 56200,
+        'description': 'WISE hibernation gap — no data, not an artifact',
+        'action': 'flag_gap',
+    },
+]
+
+
+def flag_systematic_epochs(times, band):
+    """
+    Return boolean array: True = epoch affected by known WISE systematic.
+
+    These epochs should be DOWN-WEIGHTED in DRW fitting, not removed.
+    They are flagged in the output CSV for transparency.
+
+    Parameters
+    ----------
+    times : array of MJD values
+    band : str ('W1' or 'W2')
+
+    Returns
+    -------
+    flagged : boolean array, True = affected epoch
+    """
+    times = np.asarray(times, dtype=float)
+    flagged = np.zeros(len(times), dtype=bool)
+    for sys in WISE_KNOWN_SYSTEMATICS:
+        if sys['band'] == band and sys['action'] == 'flag_epochs':
+            flagged |= (times >= sys['mjd_start']) & (times <= sys['mjd_end'])
+    return flagged
+
+
+# ---------------------------------------------------------------------------
+# FIX 14: WISE saturation / reliability limits
+# ---------------------------------------------------------------------------
+WISE_RELIABLE_PHOTOMETRY_LIMITS = {
+    'W1': {'bright': 8.0,  'faint': 14.5},   # mag Vega
+    'W2': {'bright': 6.7,  'faint': 13.7},
+}
+
+
+def check_wise_saturation(w1_mag_median, w2_mag_median):
+    """
+    Check whether median WISE magnitudes fall in the reliable range.
+
+    WISE W1 saturates at ~8.0 mag; profile-fit photometry unreliable
+    outside [8.0, 14.5] (W1) and [6.7, 13.7] (W2).
+
+    Parameters
+    ----------
+    w1_mag_median : float, median W1 magnitude
+    w2_mag_median : float, median W2 magnitude
+
+    Returns
+    -------
+    w1_reliable : bool
+    w2_reliable : bool
+    saturation_flag : str or None
+    """
+    lim = WISE_RELIABLE_PHOTOMETRY_LIMITS
+
+    w1_ok = (lim['W1']['bright'] < w1_mag_median < lim['W1']['faint']
+             if np.isfinite(w1_mag_median) else False)
+    w2_ok = (lim['W2']['bright'] < w2_mag_median < lim['W2']['faint']
+             if np.isfinite(w2_mag_median) else False)
+
+    flags = []
+    if np.isfinite(w1_mag_median) and not w1_ok:
+        if w1_mag_median <= lim['W1']['bright']:
+            flags.append(f'W1={w1_mag_median:.1f} saturated (limit: 8.0 mag)')
+        else:
+            flags.append(f'W1={w1_mag_median:.1f} too faint (limit: 14.5 mag)')
+    if np.isfinite(w2_mag_median) and not w2_ok:
+        if w2_mag_median <= lim['W2']['bright']:
+            flags.append(f'W2={w2_mag_median:.1f} saturated (limit: 6.7 mag)')
+        else:
+            flags.append(f'W2={w2_mag_median:.1f} too faint (limit: 13.7 mag)')
+
+    saturation_flag = '; '.join(flags) if flags else None
+    return bool(w1_ok), bool(w2_ok), saturation_flag
+
 
 # ---------------------------------------------------------------------------
 # Quality thresholds
@@ -179,3 +399,57 @@ SIGMA_EXCESS_LUM_SLOPE     = -0.5   # sigma ∝ L^(-0.5)
 # Output format
 # ---------------------------------------------------------------------------
 OUTPUT_CSV_FLOAT_FORMAT = '%.6f'
+
+# ---------------------------------------------------------------------------
+# WISE complete dataset tables (Expansion 1)
+# ---------------------------------------------------------------------------
+WISE_ALLSKY_TABLE     = "wise_allsky_4band_p1bs_psd"
+WISE_3BAND_TABLE      = "wise_3band_p1bs_psd"
+WISE_POSTCRYO_TABLE   = "wise_postcryo"
+WISE_ALLSKY_MJD_END   = 55415.0    # 2010-08-06
+WISE_3BAND_MJD_END    = 55468.0    # 2010-09-29
+WISE_POSTCRYO_MJD_END = 55593.0    # 2011-02-01
+WISE_FULL_BASELINE_START_MJD = 55210.0  # 2010-01-14
+
+# ---------------------------------------------------------------------------
+# Expansion 3: MCMC
+# ---------------------------------------------------------------------------
+DRW_MCMC_N_WALKERS    = 64
+DRW_MCMC_N_STEPS      = 3000
+DRW_MCMC_N_BURN       = 1000
+DRW_GR_THRESHOLD      = 1.1       # Gelman-Rubin convergence
+
+# ---------------------------------------------------------------------------
+# Expansion 4: Physical parameters
+# ---------------------------------------------------------------------------
+KAPPA_IR_BOLOMETRIC   = 8.0       # IR bolometric correction (Richards+2006)
+KAPPA_5100_BOLOMETRIC = 10.3      # 5100A bolometric correction
+KAPPA_X_BOLOMETRIC    = 20.0      # X-ray bolometric correction (Lusso+2012)
+DRW_MASS_SCALING_A    = 2.4       # log(tau/days) = A + B*log(L44) + C*log(M8) (Kelly+2009)
+DRW_MASS_SCALING_B    = 0.17
+DRW_MASS_SCALING_C    = 0.038
+
+# ---------------------------------------------------------------------------
+# Expansion 5: Validation
+# ---------------------------------------------------------------------------
+N_INJECTIONS          = 200
+N_FP_SIMULATIONS      = 1000
+INJECTION_AMPLITUDES  = [0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0]  # delta_mag
+N_JACKKNIFE_SCRAMBLES = 200
+
+# ---------------------------------------------------------------------------
+# Expansion 6: Score v2 weights (10 components)
+# ---------------------------------------------------------------------------
+SCORE_WEIGHTS_V2 = {
+    'drw_nonstationarity':  3.0,
+    'broken_drw_bic':       3.0,   # NEW
+    'nonstationary_gp':     2.5,   # NEW
+    'delta_mag_w1':         2.5,
+    'changepoint_bic':      2.5,
+    'sf_excess':            2.0,
+    'color_evolution':      1.5,
+    'flux_bimodality':      1.5,   # NEW
+    'gaia_variability':     1.5,   # upgraded weight
+    'drw_sigma_excess':     1.0,
+}
+MAX_SCORE_V2 = 20.0  # sum of v2 weights

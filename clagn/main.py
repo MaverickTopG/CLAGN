@@ -315,15 +315,16 @@ def apply_final_sanity_checks(top_results, all_results, top_n, logger):
 
         failures = []
 
-        # Check delta_mag
+        # Check delta_mag — use abs() so turn-off CLAGNs (negative delta_mag) pass
         delta_mag = score.get('delta_mag_w1', 0.0) or 0.0
-        if delta_mag < MIN_MAG_CHANGE_W1:
-            failures.append(f"delta_mag_w1={delta_mag:.3f} < {MIN_MAG_CHANGE_W1}")
+        if abs(delta_mag) < MIN_MAG_CHANGE_W1:
+            failures.append(f"|delta_mag_w1|={abs(delta_mag):.3f} < {MIN_MAG_CHANGE_W1}")
 
-        # Check flux ratio
+        # Check flux ratio — use max(r, 1/r) so both brightening and fading qualify
         flux_ratio = score.get('w1_flux_ratio', 1.0) or 1.0
-        if flux_ratio < MIN_FLUX_RATIO_CHANGE:
-            failures.append(f"flux_ratio={flux_ratio:.2f} < {MIN_FLUX_RATIO_CHANGE}")
+        effective_ratio = max(flux_ratio, 1.0 / flux_ratio) if flux_ratio > 0 else 0.0
+        if effective_ratio < MIN_FLUX_RATIO_CHANGE:
+            failures.append(f"flux_ratio={flux_ratio:.2f} (effective={effective_ratio:.2f}) < {MIN_FLUX_RATIO_CHANGE}")
 
         # Check baseline
         baseline = wise.get('baseline_years', 0.0) or 0.0
@@ -378,9 +379,22 @@ def main():
                         help='Resume from checkpoints if available')
     parser.add_argument('--workers', type=int, default=PARALLEL_WORKERS_DEFAULT,
                         help='Number of parallel workers')
+    parser.add_argument('--min_baseline', type=float, default=None,
+                        help='Override minimum baseline in years (default: config value)')
+    parser.add_argument('--min_epochs', type=int, default=None,
+                        help='Override minimum number of epochs (default: config value)')
+    parser.add_argument('--strict_quality', action='store_true',
+                        help='Enforce strict quality gates (absolute threshold checks)')
     parser.add_argument('--verbose', action='store_true')
 
     args = parser.parse_args()
+
+    # ---- Apply CLI overrides to module-level constants ----------------------
+    import clagn.config as _cfg
+    if args.min_baseline is not None:
+        _cfg.MIN_BASELINE_YEARS = args.min_baseline
+    if args.min_epochs is not None:
+        _cfg.MIN_EPOCHS = args.min_epochs
 
     # ---- Setup --------------------------------------------------------------
     os.makedirs(args.output, exist_ok=True)
