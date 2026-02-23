@@ -28,7 +28,10 @@ from ..config import (
     SCORE_GROUP_WEIGHTS_V3,
 )
 from ..utils.crossmatch import galactic_latitude
-from ..models.variability import compute_delta_mag_correct, compute_delta_mag_w2
+from ..models.variability import (
+    compute_delta_mag_correct, compute_delta_mag_w2,
+    compute_amplitude_metrics, cluster_epochs_into_seasons,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -274,10 +277,9 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
     CLAGN state change: W1 and W2 change in the SAME direction.
     Artifacts: W1 and W2 may be uncorrelated or anti-correlated.
 
-    Method:
-    1. Compute seasonal medians for W1 and W2 in the same 6-month bins
-    2. Pearson r between W1 and W2 seasonal medians
-    3. Check same-direction change: sign(delta_mag_W1) == sign(delta_mag_W2)
+    R2 FIX 3: Uses gap-based cluster_epochs_into_seasons() for season
+    assignment instead of fixed 182.625-day calendar bins. Seasonal medians
+    replace weighted means for robustness against outliers.
 
     Parameters
     ----------
@@ -289,11 +291,17 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
 
     Returns
     -------
-    coherence_score : float [0, 1] (higher = more coherent)
-    pearson_r : float
-    same_direction : bool
-    coherence_flag : str ('coherent', 'marginal', 'incoherent', 'insufficient_data')
+    dict with keys:
+        coherence_score : float [0, 1]
+        pearson_r       : float
+        same_direction  : bool or None
+        coherence_flag  : str ('coherent'|'marginal'|'incoherent'|'insufficient_data')
     """
+    _insufficient = {
+        'coherence_score': 0.0, 'pearson_r': np.nan,
+        'same_direction': None, 'coherence_flag': 'insufficient_data',
+    }
+
     times = np.asarray(times, dtype=float)
     w1_flux = np.asarray(w1_flux, dtype=float)
     w2_flux = np.asarray(w2_flux, dtype=float)
@@ -302,7 +310,7 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
              np.isfinite(w2_flux) & (w2_flux > 0))
 
     if valid.sum() < 6:
-        return 0.0, np.nan, False, 'insufficient_data'
+        return _insufficient
 
     t = times[valid]
     f1 = w1_flux[valid]
@@ -318,44 +326,46 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
     else:
         e2 = f2 * 0.05
 
-    # FLAW A2: Use global anchor so season IDs are consistent across sources
-    # FLAW B3: Compute per-season error for uncertainty-weighted coherence
-    season_id = np.floor((t - WISE_SEASON_ANCHOR_MJD) / 182.625).astype(int)
+    # R2 FIX 3: Gap-based season clustering (replaces fixed 182.625-day bins)
+    season_id = cluster_epochs_into_seasons(t)
+
     w1_season = {}
     w2_season = {}
     w1_season_err = {}
     w2_season_err = {}
 
-    for s in np.unique(season_id):
+    for s in np.unique(season_id[season_id >= 0]):
         mask = season_id == s
         if mask.sum() < 3:
             continue
-        w1_weights = 1.0 / np.maximum(e1[mask] ** 2, 1e-30)
-        w2_weights = 1.0 / np.maximum(e2[mask] ** 2, 1e-30)
-        w1_season[s] = float(np.average(f1[mask], weights=w1_weights))
-        w2_season[s] = float(np.average(f2[mask], weights=w2_weights))
-        # Formal uncertainty of weighted mean
-        w1_season_err[s] = float(1.0 / np.sqrt(w1_weights.sum()))
-        w2_season_err[s] = float(1.0 / np.sqrt(w2_weights.sum()))
+        # R2 FIX 3: Use seasonal MEDIANS (robust) instead of weighted means
+        w1_med = float(np.median(f1[mask]))
+        w2_med = float(np.median(f2[mask]))
+        w1_mad = float(np.median(np.abs(f1[mask] - w1_med)))
+        w2_mad = float(np.median(np.abs(f2[mask] - w2_med)))
+        n_s = mask.sum()
+        w1_season[s] = w1_med
+        w2_season[s] = w2_med
+        w1_season_err[s] = max(1.4826 * w1_mad / np.sqrt(n_s), 1e-10)
+        w2_season_err[s] = max(1.4826 * w2_mad / np.sqrt(n_s), 1e-10)
 
     common_seasons = sorted(set(w1_season) & set(w2_season))
-    # FLAW B3: Require >= 4 joint seasons (up from 3)
     if len(common_seasons) < 4:
-        return 0.0, np.nan, False, 'insufficient_data'
+        return _insufficient
 
     w1_vals = np.array([w1_season[s] for s in common_seasons])
     w2_vals = np.array([w2_season[s] for s in common_seasons])
     w1_errs = np.array([w1_season_err[s] for s in common_seasons])
     w2_errs = np.array([w2_season_err[s] for s in common_seasons])
 
-    # FLAW B3: Uncertainty-weighted Pearson r
+    # Uncertainty-weighted Pearson r
     combined_weights = 1.0 / np.maximum(w1_errs ** 2 + w2_errs ** 2, 1e-30)
     combined_weights /= combined_weights.sum()
 
     w1_wmean = np.average(w1_vals, weights=combined_weights)
     w2_wmean = np.average(w2_vals, weights=combined_weights)
 
-    cov = np.sum(combined_weights * (w1_vals - w1_wmean) * (w2_vals - w2_wmean))
+    cov  = np.sum(combined_weights * (w1_vals - w1_wmean) * (w2_vals - w2_wmean))
     std1 = np.sqrt(np.sum(combined_weights * (w1_vals - w1_wmean) ** 2))
     std2 = np.sqrt(np.sum(combined_weights * (w2_vals - w2_wmean) ** 2))
 
@@ -363,7 +373,8 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
     if not np.isfinite(pearson_r):
         pearson_r = 0.0
 
-    # Same-direction change (score-H7: indeterminate when changes too flat)
+    # Same-direction change (indeterminate when changes are too flat)
+    from ..config import COHERENCE_FLATNESS_THRESH
     seasons_sorted = sorted(common_seasons)
     if len(seasons_sorted) >= 4:
         f1_early = np.mean([w1_season[s] for s in seasons_sorted[:2]])
@@ -372,10 +383,10 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
         f2_late  = np.mean([w2_season[s] for s in seasons_sorted[-2:]])
         delta_w1 = f1_late - f1_early
         delta_w2 = f2_late - f2_early
-        thresh1 = 0.02 * (abs(f1_early) + abs(f1_late)) / 2
-        thresh2 = 0.02 * (abs(f2_early) + abs(f2_late)) / 2
+        thresh1 = COHERENCE_FLATNESS_THRESH * (abs(f1_early) + abs(f1_late)) / 2.0
+        thresh2 = COHERENCE_FLATNESS_THRESH * (abs(f2_early) + abs(f2_late)) / 2.0
         if abs(delta_w1) < thresh1 or abs(delta_w2) < thresh2:
-            same_direction = None   # Indeterminate — too flat to measure direction
+            same_direction = None
         else:
             same_direction = bool(np.sign(delta_w1) == np.sign(delta_w2))
     else:
@@ -383,16 +394,14 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
         d2 = w2_vals[-1] - w2_vals[0]
         same_direction = bool(np.sign(d1) == np.sign(d2))
 
-    # Coherence score: combines weighted Pearson r and same-direction bonus
-    # same_direction=None → neutral factor 0.75
     if same_direction is None:
         direction_factor = 0.75
     elif same_direction:
         direction_factor = 1.0
     else:
         direction_factor = 0.5
-    coherence_score = max(0.0, pearson_r) * direction_factor
-    coherence_score = float(np.clip(coherence_score, 0.0, 1.0))
+
+    coherence_score = float(np.clip(max(0.0, pearson_r) * direction_factor, 0.0, 1.0))
 
     if pearson_r > 0.6 and same_direction is True:
         coherence_flag = 'coherent'
@@ -403,7 +412,12 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
     else:
         coherence_flag = 'incoherent'
 
-    return coherence_score, pearson_r, same_direction, coherence_flag
+    return {
+        'coherence_score': coherence_score,
+        'pearson_r':       pearson_r,
+        'same_direction':  same_direction,
+        'coherence_flag':  coherence_flag,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +531,9 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
     """
     z = float(source_record.get('redshift', source_record.get('z', 0.1)))
 
+    # Extract light curve early so it's available to all components below
+    lc = wise_result.get('lc')
+
     # ---- Component 1: DRW Nonstationarity -----------------------------------
     nonstat_sigma = _safe(drw_results.get('nonstationarity_sigma'))
     score_drw_nonstat = _norm_drw_nonstat(nonstat_sigma)
@@ -526,11 +543,32 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
      flux_ratio_w1, delta_mag_method) = _compute_delta_mag_seasonal(
         wise_result, z=z
     )
-    # FIX 8: NO abs() — use signed delta_mag for scoring (|frac_change| for norm)
-    score_delta_mag = _norm_frac_flux_change(frac_change)
+
+    # R2 FIX 2: Try compute_amplitude_metrics for max-contrast amplitude
+    amplitude_metrics_result = None
+    amplitude_method = delta_mag_method
+    if lc is not None and len(lc) >= 6:
+        mjd_am = lc['mjd'].values if 'mjd' in lc.columns else None
+        w1_am  = lc['w1_flux_mjy'].values if 'w1_flux_mjy' in lc.columns else None
+        w1e_am = lc['w1_flux_err_mjy'].values if 'w1_flux_err_mjy' in lc.columns else None
+        if mjd_am is not None and w1_am is not None and w1e_am is not None:
+            try:
+                amplitude_metrics_result = compute_amplitude_metrics(
+                    mjd_am, w1_am, w1e_am, z=z)
+            except Exception:
+                pass
+
+    if amplitude_metrics_result is not None:
+        delta_mag_best = amplitude_metrics_result['delta_mag']
+        amplitude_method = amplitude_metrics_result['amplitude_method']
+        frac_change_best = abs(10.0 ** (delta_mag_best / 2.5) - 1.0)
+        score_delta_mag = _norm_frac_flux_change(frac_change_best)
+        frac_change = frac_change_best
+    else:
+        # FIX 8: NO abs() — use signed delta_mag for scoring (|frac_change| for norm)
+        score_delta_mag = _norm_frac_flux_change(frac_change)
 
     # Score for flux ratio (same amplitude evidence, different normalization)
-    # flux_ratio > 1 = brightened; (flux_ratio - 1) for turn-on,  (1/flux_ratio - 1) for turn-off
     flux_ratio_score = float(np.clip(abs(flux_ratio_w1 - 1.0) / 1.0, 0.0, 1.0))
 
     # ---- Component 3: Bayesian Changepoint BIC ------------------------------
@@ -552,7 +590,7 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
 
     # ---- Component 6: DRW Sigma Excess vs Luminosity ------------------------
     sigma_drw_obs = _safe(drw_results.get('sigma_drw'), default=0.0)
-    lc = wise_result.get('lc')
+    # lc already extracted above (R2 FIX 2)
     w1_flux_mean = (float(np.nanmean(lc['w1_flux_mjy'].values))
                     if lc is not None and 'w1_flux_mjy' in lc.columns
                     else 1.0)
@@ -582,10 +620,13 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
         w2e_arr = lc['w2_flux_err_mjy'].values if 'w2_flux_err_mjy' in lc.columns else None
 
         if mjd_arr is not None and w1_arr is not None and w2_arr is not None:
-            (w1_w2_coherence_score, w1_w2_pearson_r,
-             w1_w2_same_direction, w1_w2_coherence_flag) = check_w1_w2_coherence(
+            _coh = check_w1_w2_coherence(
                 mjd_arr, w1_arr, w2_arr, w1e_arr, w2e_arr
             )
+            w1_w2_coherence_score = _coh['coherence_score']
+            w1_w2_pearson_r       = _coh['pearson_r']
+            w1_w2_same_direction  = _coh['same_direction']
+            w1_w2_coherence_flag  = _coh['coherence_flag']
 
     # ---- FIX 10: Composite score v3 — no double-counting -------------------
     components_v3 = {
@@ -601,8 +642,8 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
     }
     composite, group_scores = compute_composite_score_v3(components_v3)
 
-    # ---- Physical interpretation --------------------------------------------
-    label = classify_clagn_type(
+    # ---- Physical interpretation (R2 FIX 10: dict return with candidate language)
+    label_dict = classify_clagn_type(
         {
             'score_drw_nonstat': score_drw_nonstat,
             'score_delta_mag': score_delta_mag,
@@ -611,6 +652,7 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
         },
         drw_results, cp_results, wise_result
     )
+    label = label_dict['clagn_type']
 
     return {
         'score_drw_nonstat':    score_drw_nonstat,
@@ -622,10 +664,18 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
         'score_gaia':           score_gaia,
         'composite':            float(composite),
         'label':                label,
+        # R2 FIX 10: Full classification dict
+        'clagn_type':                          label_dict['clagn_type'],
+        'classification_basis':                label_dict['classification_basis'],
+        'spectroscopic_confirmation_required': label_dict['spectroscopic_confirmation_required'],
+        'classification_confidence':           label_dict['classification_confidence'],
         # FIX 1, 8: Signed delta_mag from seasonal median flux method
         'delta_mag_w1':                          delta_mag_w1,
         'delta_mag_w2':                          delta_mag_w2,
         'delta_mag_method':                      delta_mag_method,
+        # R2 FIX 2: Best-amplitude method used for scoring
+        'amplitude_method':                      amplitude_method,
+        'amplitude_metrics':                     amplitude_metrics_result,
         # FLAW B4: renamed to clearly label as estimate
         'delta_mag_host_corrected_estimate':     delta_mag_host_corrected_estimate,
         'host_fraction_prior_estimate':          host_fraction_prior_estimate,
@@ -679,12 +729,15 @@ def classify_clagn_type(scores, drw_results, cp_results, wise_result):
     Assign a physical interpretation label based on the Ricci & Trakhtenbrot
     (2022) CLAGN taxonomy.
 
+    R2 FIX 10: Returns a dict (not a plain str) using photometric candidate
+    language. Spectroscopic confirmation is always required.
+
     Classification decision tree:
-    1. Rapid Transition (possible TDE-in-AGN or magnetic disk event)
-    2. CS-AGN Turn-Off (fading accretion)
-    3. CS-AGN Turn-On (rising accretion)
-    4. CO-AGN candidate (cloud eclipse)
-    5. Unknown/Ambiguous (spectroscopic followup required)
+    1. Rapid Transition photometric candidate
+    2. CS-AGN Turn-Off photometric candidate
+    3. CS-AGN Turn-On photometric candidate
+    4. CO-AGN photometric candidate (cloud eclipse)
+    5. Ambiguous photometric CLAGN candidate
 
     Parameters
     ----------
@@ -693,16 +746,18 @@ def classify_clagn_type(scores, drw_results, cp_results, wise_result):
 
     Returns
     -------
-    label : str
+    dict with keys:
+        clagn_type : str  (photometric candidate label)
+        classification_basis : str  (which evidence drove the label)
+        spectroscopic_confirmation_required : bool  (always True)
+        classification_confidence : str  ('high'|'moderate'|'low')
     """
-    # FIX 8: delta_mag is now signed (positive=brightened, negative=faded)
-    # Use abs(delta_mag) for amplitude thresholds; sign determines type
-    delta_mag  = _safe(scores.get('delta_mag_w1', 0.0))
+    delta_mag     = _safe(scores.get('delta_mag_w1', 0.0))
     abs_delta_mag = abs(delta_mag)
-    pre_mean   = _safe(cp_results.get('pre_break_mean', 0.0))
-    post_mean  = _safe(cp_results.get('post_break_mean', 0.0))
-    break_dur  = _safe(cp_results.get('break_duration_days', 365.0), default=365.0)
-    tau        = _safe(drw_results.get('tau_rest_days', 300.0), default=300.0)
+    pre_mean      = _safe(cp_results.get('pre_break_mean', 0.0))
+    post_mean     = _safe(cp_results.get('post_break_mean', 0.0))
+    break_dur     = _safe(cp_results.get('break_duration_days', 365.0), default=365.0)
+    tau           = _safe(drw_results.get('tau_rest_days', 300.0), default=300.0)
 
     w1w2_early = _safe(wise_result.get('w1_minus_w2_early'), default=np.nan)
     w1w2_late  = _safe(wise_result.get('w1_minus_w2_late'),  default=np.nan)
@@ -710,47 +765,77 @@ def classify_clagn_type(scores, drw_results, cp_results, wise_result):
     if np.isfinite(w1w2_early) and np.isfinite(w1w2_late):
         color_change = w1w2_late - w1w2_early
 
-    # Rapid Transition: short break duration AND large flux change (either direction)
+    def _make(clagn_type, basis, confidence):
+        return {
+            'clagn_type':                          clagn_type,
+            'classification_basis':                basis,
+            'spectroscopic_confirmation_required': True,
+            'classification_confidence':           confidence,
+        }
+
+    # Rapid Transition: short break duration AND large amplitude (either direction)
     if abs_delta_mag > 0.75 and np.isfinite(break_dur) and break_dur < 2 * 365.25:
-        return (
-            "Rapid transition — possible TDE-in-AGN or magnetic disk event "
-            "(Ricci+2022 §3.6.2)"
+        return _make(
+            'rapid_transition_photometric_candidate',
+            'large_amplitude_short_timescale_photometric',
+            'moderate'
         )
 
-    # Turn-Off: delta_mag < 0 (faded) AND color becoming bluer
+    # Turn-Off with confirmed color change
     if (delta_mag < -0.5 and pre_mean > 0 and post_mean < pre_mean and
             np.isfinite(color_change) and color_change < -0.05):
-        return (
-            "CS-AGN Turn-Off (fading accretion, BLR likely disappearing)"
+        return _make(
+            'cs_agn_turn_off_photometric_candidate',
+            'fading_flux_and_bluer_color_photometric',
+            'high'
         )
 
-    # Turn-On: delta_mag > 0 (brightened) AND color becoming redder
+    # Turn-On with confirmed color change
     if (delta_mag > 0.5 and post_mean > pre_mean and
             np.isfinite(color_change) and color_change > 0.05):
-        return (
-            "CS-AGN Turn-On (rising accretion, BLR likely emerging)"
+        return _make(
+            'cs_agn_turn_on_photometric_candidate',
+            'rising_flux_and_redder_color_photometric',
+            'high'
         )
 
-    # General strong turn-off without confirmed color change
+    # Strong turn-off without confirmed color change
     if delta_mag < -0.5 and pre_mean > 0 and post_mean < pre_mean:
-        return "CS-AGN Turn-Off candidate (spectroscopic followup required)"
-
-    # General strong turn-on without confirmed color change
-    if delta_mag > 0.5 and post_mean > pre_mean:
-        return "CS-AGN Turn-On candidate (spectroscopic followup required)"
-
-    # CO-AGN: short DRW timescale, moderate amplitude, no sustained trend
-    if tau < 100.0 and 0.1 < abs_delta_mag < 0.4:
-        return (
-            "CO-AGN candidate — possible BLR cloud eclipse "
-            "(short tau_DRW ~ BLR cloud crossing timescale)"
+        return _make(
+            'cs_agn_turn_off_photometric_candidate',
+            'fading_flux_photometric_no_color_confirmation',
+            'moderate'
         )
 
-    # Marginal candidates
-    if 0.3 <= abs_delta_mag <= 0.5:
-        return "Marginal CLAGN candidate — type ambiguous, spectroscopic followup required"
+    # Strong turn-on without confirmed color change
+    if delta_mag > 0.5 and post_mean > pre_mean:
+        return _make(
+            'cs_agn_turn_on_photometric_candidate',
+            'rising_flux_photometric_no_color_confirmation',
+            'moderate'
+        )
 
-    return "CLAGN candidate — type ambiguous, spectroscopic followup required"
+    # CO-AGN: short DRW timescale, moderate amplitude
+    if tau < 100.0 and 0.1 < abs_delta_mag < 0.4:
+        return _make(
+            'co_agn_photometric_candidate',
+            'short_tau_drw_moderate_amplitude_photometric',
+            'low'
+        )
+
+    # Marginal / ambiguous
+    if 0.3 <= abs_delta_mag <= 0.5:
+        return _make(
+            'ambiguous_photometric_clagn_candidate',
+            'marginal_amplitude_photometric',
+            'low'
+        )
+
+    return _make(
+        'ambiguous_photometric_clagn_candidate',
+        'insufficient_discriminating_evidence',
+        'low'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -833,6 +918,9 @@ def apply_false_positive_rejection(candidates_df, lc_dict, wise_dict_map):
                 penalty *= FP_ARTIFACT_SCORE_PENALTY
 
         # ---- Check 4: Host galaxy contamination ---------------------------
+        # R2 FIX 9: Flag host contamination risk but do NOT apply a score penalty.
+        # Applying a penalty here double-penalises low-z sources (they already score
+        # lower due to diluted delta_mag). The flag is preserved for transparency.
         host_risk = bool(row.get('host_contamination_risk', False))
         delta_mag = _safe(
             row.get('delta_mag_w1',
@@ -842,9 +930,9 @@ def apply_false_positive_rejection(candidates_df, lc_dict, wise_dict_map):
         )
         if host_risk and delta_mag < 0.5:
             flags.append(
-                'host_contamination_risk(z<0.05,marginal_delta_mag)'
+                'host_contamination_risk(z<0.05,marginal_delta_mag,annotation_only)'
             )
-            penalty *= FP_HOST_SCORE_PENALTY
+            # NOTE: No penalty *= FP_HOST_SCORE_PENALTY (R2 FIX 9)
 
         # ---- Apply penalty --------------------------------------------------
         if penalty < 1.0:
@@ -985,10 +1073,13 @@ def _norm_gaia_var_v2(gaia_lc, gaia_photometry):
 
 
 def _bootstrap_score_uncertainty(source_data, n_bootstrap=100):
-    """Bootstrap uncertainty estimate for composite score.
+    """Block bootstrap uncertainty estimate for composite score.
 
-    score-C1: Bootstrap only delta_mag (DRW nonstationarity is too expensive and
-    disrupts the temporal structure of bootstrap resamples).
+    R2 FIX 7: Resamples SEASONS (blocks) instead of individual epochs.
+    This preserves within-season temporal structure, which is critical for
+    the seasonal-median delta_mag computation. Individual-epoch resampling
+    destroys the seasonal grouping and produces overconfident (narrow)
+    uncertainty estimates.
 
     Parameters
     ----------
@@ -997,41 +1088,59 @@ def _bootstrap_score_uncertainty(source_data, n_bootstrap=100):
 
     Returns
     -------
-    dict with: score_err, score_err_lo, score_err_hi, n_bootstrap, bootstrap_component
+    dict with: score_err, score_err_lo, score_err_hi, n_bootstrap,
+               bootstrap_component, bootstrap_method
     """
-    t = source_data.get('times')
-    f = source_data.get('w1_flux_mjy')
-    e = source_data.get('w1_flux_err_mjy')
+    t = np.asarray(source_data.get('times', []), dtype=float)
+    f = np.asarray(source_data.get('w1_flux_mjy', []), dtype=float)
+    e = np.asarray(source_data.get('w1_flux_err_mjy', []), dtype=float)
     z = float(source_data.get('z', 0.1))
 
-    if t is None or len(t) < 10:
-        return {'score_err': np.nan, 'score_err_lo': np.nan, 'score_err_hi': np.nan,
-                'n_bootstrap': 0, 'bootstrap_component': 'delta_mag'}
+    _empty = {'score_err': np.nan, 'score_err_lo': np.nan, 'score_err_hi': np.nan,
+              'n_bootstrap': 0, 'bootstrap_component': 'delta_mag',
+              'bootstrap_method': 'block_by_season'}
+
+    if len(t) < 10:
+        return _empty
 
     try:
+        # Assign season labels via gap-based clustering
+        season_ids = cluster_epochs_into_seasons(t)
+        unique_seasons = np.unique(season_ids[season_ids >= 0])
+        if len(unique_seasons) < 4:
+            return _empty
+
+        # Group epoch indices by season
+        season_groups = {s: np.where(season_ids == s)[0] for s in unique_seasons}
+
         rng = np.random.default_rng(42)
         bootstrap_scores = []
 
         for _ in range(n_bootstrap):
-            idx = rng.integers(0, len(t), size=len(t))
-            t_b = t[idx]
-            f_b = f[idx]
-            e_b = e[idx]
+            # Resample seasons WITH replacement (block bootstrap)
+            sampled_seasons = rng.choice(unique_seasons,
+                                         size=len(unique_seasons), replace=True)
+            idx_list = []
+            for s in sampled_seasons:
+                idx_list.extend(season_groups[s].tolist())
+            idx_arr = np.array(idx_list, dtype=int)
 
-            # Re-sort bootstrap sample by time
+            t_b = t[idx_arr]
+            f_b = f[idx_arr]
+            e_b = e[idx_arr]
+
+            # Sort by time for seasonal-median computation
             sort_order = np.argsort(t_b)
             t_b = t_b[sort_order]
             f_b = f_b[sort_order]
             e_b = e_b[sort_order]
 
-            # Delta mag via seasonal median method
             dm_result = compute_delta_mag_correct(t_b, f_b, e_b, z=z)
             if dm_result is not None:
                 frac_change = abs(dm_result['flux_ratio'] - 1.0)
                 c_delta = _norm_frac_flux_change(frac_change)
             else:
                 c_delta = 0.0
-
             bootstrap_scores.append(float(c_delta))
 
         scores_arr = np.array(bootstrap_scores)
@@ -1043,10 +1152,10 @@ def _bootstrap_score_uncertainty(source_data, n_bootstrap=100):
             'score_err_hi':        float(pct[1]),
             'n_bootstrap':         n_bootstrap,
             'bootstrap_component': 'delta_mag',
+            'bootstrap_method':    'block_by_season',
         }
     except Exception:
-        return {'score_err': np.nan, 'score_err_lo': np.nan, 'score_err_hi': np.nan,
-                'n_bootstrap': 0, 'bootstrap_component': 'delta_mag'}
+        return _empty
 
 
 def compute_composite_score_v2(source, lc_data=None, drw_map=None, drw_mcmc_results=None,
@@ -1134,19 +1243,28 @@ def compute_composite_score_v2(source, lc_data=None, drw_map=None, drw_mcmc_resu
         ns_log_bf = nonstat_gp.get('log_bayes_factor', np.nan)
     c3_ns_gp = _norm_nonstationary_gp(ns_log_bf)
 
-    # --- Component 4: Delta mag W1 ---
+    # --- Component 4: Delta mag W1 (R2 FIX 8: explicit mag→fraction conversion) ---
     delta_mag_frac = 0.0
     if variability_stats:
-        delta_mag_frac = _safe(variability_stats.get('delta_mag_frac',
-                               variability_stats.get('delta_mag_w1_frac', 0.0)))
+        # Read as magnitude (Pogson scale), then convert to fractional flux change
+        delta_mag_mag = float(_safe(
+            variability_stats.get(
+                'delta_mag_w1_seasonal_pogson',
+                variability_stats.get('delta_mag_w1',
+                variability_stats.get('delta_mag', 0.0))
+            ), default=0.0
+        ))
+        flux_ratio_v2 = 10.0 ** (delta_mag_mag / 2.5)
+        delta_mag_frac = abs(flux_ratio_v2 - 1.0)
     elif fluxes is not None and len(fluxes) > 10:
+        # Fallback: raw flux median comparison → true fractional change
         n = len(fluxes)
         mid = n // 2
         f_early = np.median(fluxes[:mid])
         f_late = np.median(fluxes[mid:])
-        f_mean = np.mean(fluxes)
-        if f_mean > 0:
-            delta_mag_frac = abs(f_late - f_early) / f_mean
+        if f_early > 0:
+            flux_ratio_v2 = f_late / f_early
+            delta_mag_frac = abs(flux_ratio_v2 - 1.0)
     c4_delta_mag = _norm_frac_flux_change(delta_mag_frac)
 
     # --- Component 5: Changepoint BIC ---
@@ -1208,9 +1326,11 @@ def compute_composite_score_v2(source, lc_data=None, drw_map=None, drw_mcmc_resu
     raw_score = sum(w[k] * components[k] for k in w)
     # score-M13: Verify MAX_SCORE_V2 matches sum of weights (guards against drift)
     max_score_actual = sum(SCORE_WEIGHTS_V2.values())
-    assert abs(max_score_actual - MAX_SCORE_V2) < 0.01, (
-        f"MAX_SCORE_V2={MAX_SCORE_V2} != sum(SCORE_WEIGHTS_V2)={max_score_actual}"
-    )
+    if abs(max_score_actual - MAX_SCORE_V2) > 0.01:
+        raise ValueError(
+            f"MAX_SCORE_V2={MAX_SCORE_V2} != sum(SCORE_WEIGHTS_V2)={max_score_actual}. "
+            f"Update MAX_SCORE_V2 in config.py to match SCORE_WEIGHTS_V2."
+        )
     composite_score_v2 = raw_score / max_score_actual
 
     # Bootstrap uncertainty estimate (score-C1: dict signature)

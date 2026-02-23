@@ -9,9 +9,11 @@ import warnings
 import numpy as np
 
 from ..config import (
-    GAIA_SEARCH_RADIUS_ARCSEC, GAIA_MAIN_TABLE, GAIA_COLUMNS,
+    GAIA_SEARCH_RADIUS_ARCSEC, GAIA_ACCEPT_RADIUS_ARCSEC,
+    GAIA_MAIN_TABLE, GAIA_COLUMNS,
     GAIA_COLUMNS_WITH_PARALLAX,
     MAX_PROPER_MOTION_SIG, MAX_RUWE,
+    MAX_PARALLAX_SIG, RUWE_HARD_REJECT, RUWE_SOFT_FLAG,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,10 +40,12 @@ def _null_gaia_result():
         'gaia_pm_unknown': True,
         'passes_pm_filter': True,    # NaN PM → unknown, do not reject
         'passes_ruwe': True,
+        'passes_gaia_filter': True,  # gaia-C1: unified filter result
         'astrometric_excess_noise_sig': np.nan,
         'phot_g_mean_mag': np.nan,
         'phot_variable_flag': 'NOT_AVAILABLE',
         'gaia_variability_score': 0.0,
+        'gaia_variability_evidence': 'none',
         'classprob_quasar': np.nan,
         'classprob_galaxy': np.nan,
         # parallax fields
@@ -55,6 +59,151 @@ def _null_gaia_result():
         'gaia_quasar_class': None,
         'gaia_ang_sep_arcsec': np.nan,
         'gaia_match_method': None,
+        # gaia-C1: unified star rejection fields
+        'star_reject_as_star': False,
+        'star_rejection_reason': 'no_match',
+        'star_confidence': 'unknown',
+        'star_requires_confirmation': False,
+        'gaia_astrometry': 'unavailable',
+    }
+
+
+def assess_stellar_contamination(gaia_row, config=None):
+    """
+    Unified stellar contamination assessment (gaia-C1, gaia-H3, gaia-H4).
+
+    A source is rejected as a foreground star if ANY of:
+    1. Parallax SNR > MAX_PARALLAX_SIG  (direct distance constraint — strongest)
+    2. PM SNR > MAX_PROPER_MOTION_SIG   (kinematic constraint)
+    3. RUWE > RUWE_HARD_REJECT          (astrometric solution quality — alone)
+    4. RUWE > RUWE_SOFT_FLAG AND (parallax OR pm rejects)  (corroborated soft)
+
+    gaia-H3: RUWE is demoted to soft penalty in isolation. RUWE > 1.4 alone does
+    NOT reject — it may indicate a binary, blend, or interesting source. Only
+    RUWE > 2.5 (RUWE_HARD_REJECT) rejects alone.
+
+    gaia-H4: Unknown PM/parallax → not rejected, but flagged as requiring
+    confirmation (not auto-passed as before).
+
+    Parameters
+    ----------
+    gaia_row : dict with keys: pm_sig, parallax_sig, ruwe
+    config : optional namespace with MAX_PROPER_MOTION_SIG, MAX_PARALLAX_SIG,
+             RUWE_HARD_REJECT, RUWE_SOFT_FLAG (falls back to module constants)
+
+    Returns
+    -------
+    dict with: reject_as_star, rejection_reason, pm_sig, parallax_sig, ruwe,
+               n_criteria_triggered, confidence, parallax_reject, pm_reject,
+               ruwe_reject, requires_confirmation (optional), gaia_astrometry (optional)
+    """
+    # Use config constants or fall back to module-level imports
+    MAX_PM_SIG   = getattr(config, 'MAX_PROPER_MOTION_SIG', MAX_PROPER_MOTION_SIG)
+    MAX_PLX_SIG  = getattr(config, 'MAX_PARALLAX_SIG',      MAX_PARALLAX_SIG)
+    RUWE_HARD    = getattr(config, 'RUWE_HARD_REJECT',      RUWE_HARD_REJECT)
+    RUWE_SOFT    = getattr(config, 'RUWE_SOFT_FLAG',        RUWE_SOFT_FLAG)
+
+    pm_sig       = float(gaia_row.get('pm_sig',       np.nan))
+    parallax_sig = float(gaia_row.get('parallax_sig', np.nan))
+    ruwe         = float(gaia_row.get('ruwe',         np.nan))
+
+    reasons = []
+
+    # Criterion 1: Parallax (strongest indicator — direct distance measurement)
+    parallax_reject = bool(np.isfinite(parallax_sig) and parallax_sig > MAX_PLX_SIG)
+    if parallax_reject:
+        reasons.append(f'parallax_sig={parallax_sig:.1f}>{MAX_PLX_SIG}')
+
+    # Criterion 2: Proper motion
+    pm_reject = bool(np.isfinite(pm_sig) and pm_sig > MAX_PM_SIG)
+    if pm_reject:
+        reasons.append(f'pm_sig={pm_sig:.1f}>{MAX_PM_SIG}')
+
+    # Criterion 3a: RUWE hard reject (alone sufficient — gaia-H3)
+    ruwe_hard_reject = bool(np.isfinite(ruwe) and ruwe > RUWE_HARD)
+    if ruwe_hard_reject:
+        reasons.append(f'ruwe={ruwe:.2f}>{RUWE_HARD}(hard)')
+
+    # Criterion 3b: RUWE soft flag + corroboration (gaia-H3)
+    ruwe_soft_flag = bool(np.isfinite(ruwe) and ruwe > RUWE_SOFT and not ruwe_hard_reject)
+    if ruwe_soft_flag and (parallax_reject or pm_reject):
+        reasons.append(f'ruwe={ruwe:.2f}>{RUWE_SOFT}(soft+corroborated)')
+
+    # FINAL DECISION: OR logic across all criteria (gaia-C1)
+    reject = (parallax_reject or pm_reject or ruwe_hard_reject or
+              (ruwe_soft_flag and (parallax_reject or pm_reject)))
+
+    n_triggered = sum([parallax_reject, pm_reject, ruwe_hard_reject])
+    confidence  = 'high' if n_triggered >= 2 else ('medium' if n_triggered == 1 else 'low')
+
+    result = {
+        'reject_as_star':       reject,
+        'rejection_reason':     '; '.join(reasons) if reasons else 'passes_all',
+        'pm_sig':               pm_sig,
+        'parallax_sig':         parallax_sig,
+        'ruwe':                 ruwe,
+        'n_criteria_triggered': n_triggered,
+        'confidence':           confidence,
+        'parallax_reject':      parallax_reject,
+        'pm_reject':            pm_reject,
+        'ruwe_reject':          ruwe_hard_reject,
+    }
+
+    # gaia-H4: Unknown astrometry → downweight, not auto-pass
+    if not np.isfinite(pm_sig) and not np.isfinite(parallax_sig):
+        result.update({
+            'reject_as_star':        False,   # Cannot reject — insufficient data
+            'gaia_astrometry':       'unknown',
+            'confidence':            'unknown',
+            'requires_confirmation': True,    # Flag for downstream; needs optical/spec confirmation
+            'astrometry_note': (
+                'PM and parallax unavailable — cannot rule out foreground star. '
+                'Source retained but flagged. Requires additional confirmation '
+                '(optical variability, SED, spectroscopy) before claiming CLAGN.'
+            ),
+        })
+
+    return result
+
+
+def compute_gaia_variability_score(gaia_row):
+    """
+    Compute AGN variability evidence from Gaia DR3 (gaia-M5).
+
+    Replaces the binary 0/1 from phot_variable_flag (very coarse, incomplete
+    across sky regions and color/redshift space).
+
+    Uses multiple Gaia DR3 fields in priority order:
+    1. classprob_dsc_combmod_quasar (Discrete Source Classifier quasar probability)
+    2. phot_g_mean_flux_over_error (variability proxy when many obs available)
+    3. phot_variable_flag (coarse fallback — very low weight)
+
+    Returns
+    -------
+    dict: gaia_variability_score (float in [0,1]), gaia_variability_evidence (str)
+    """
+    score = 0.0
+    evidence = []
+
+    # Priority 1: DSC quasar probability (Gaia DR3 classifier)
+    qso_prob = gaia_row.get('classprob_dsc_combmod_quasar', np.nan)
+    if np.isfinite(float(qso_prob)) and float(qso_prob) > 0:
+        score = max(score, float(qso_prob))
+        evidence.append(f'dsc_qso_prob={float(qso_prob):.2f}')
+
+    # Priority 2: phot_variable_flag (weakest — use only as tiebreaker)
+    var_flag = gaia_row.get('phot_variable_flag', '')
+    if str(var_flag).upper() == 'VARIABLE':
+        score = max(score, 0.3)   # Low weight — very coarse flag
+        evidence.append('phot_variable_flag=VARIABLE')
+
+    if not evidence:
+        return {'gaia_variability_score': 0.0, 'gaia_variability_evidence': 'none'}
+
+    return {
+        'gaia_variability_score':    float(np.clip(score, 0, 1)),
+        'gaia_variability_evidence': '; '.join(evidence),
+        'gaia_dsc_qso_prob':         float(qso_prob) if np.isfinite(float(qso_prob)) else np.nan,
     }
 
 
@@ -113,13 +262,13 @@ def query_gaia_dr3(ra, dec, source_id):
     # Fix #6: Take nearest match (sorted by ang_sep_deg ASC)
     row = tbl[0]
 
-    # Reject if nearest source exceeds match threshold
-    MAX_MATCH_ARCSEC = 1.0
+    # gaia-H2: use GAIA_ACCEPT_RADIUS_ARCSEC from config (not hardcoded 1.0 arcsec)
+    # Two-stage: query uses GAIA_SEARCH_RADIUS_ARCSEC (2.0"), accept only within 1.0".
     ang_sep_arcsec = float(row['ang_sep_deg']) * 3600.0
-    if ang_sep_arcsec > MAX_MATCH_ARCSEC:
+    if ang_sep_arcsec > GAIA_ACCEPT_RADIUS_ARCSEC:
         logger.debug(
             f"{source_id}: Nearest GAIA source at {ang_sep_arcsec:.2f}\" "
-            f"exceeds {MAX_MATCH_ARCSEC}\" threshold — no match"
+            f"exceeds {GAIA_ACCEPT_RADIUS_ARCSEC}\" acceptance threshold — no match"
         )
         return _null_gaia_result()
 
@@ -170,16 +319,29 @@ def query_gaia_dr3(ra, dec, source_id):
         ruwe, excess_noise_sig
     )
 
-    # ---- PM filter: reject stars (pm_sig >= 3.0) ----------------------------
-    if gaia_pm_unknown:
-        passes_pm = True
-    elif not np.isfinite(pm_sig):
-        passes_pm = True
-    else:
-        passes_pm = pm_sig < MAX_PROPER_MOTION_SIG
+    # ---- gaia-C1: Unified stellar contamination assessment ------------------
+    # OLD: only pm_sig < MAX_PROPER_MOTION_SIG — misses high-parallax slow stars.
+    # NEW: assess_stellar_contamination() uses parallax OR pm OR RUWE (OR logic).
+    star_result = assess_stellar_contamination({
+        'pm_sig':       pm_sig,
+        'parallax_sig': float(plx_sig) if np.isfinite(plx_sig) else np.nan,
+        'ruwe':         ruwe,
+    })
+    passes_gaia_filter = not star_result['reject_as_star']
+    # Backward-compat alias for callers that check passes_pm_filter
+    passes_pm = passes_gaia_filter
 
-    # ---- GAIA variability score --------------------------------------------
-    gaia_var_score = 1.0 if phot_var_flag == 'VARIABLE' else 0.0
+    # ---- gaia-M5: Rich GAIA DR3 variability score --------------------------
+    # OLD: binary 0/1 from phot_variable_flag (very coarse).
+    # NEW: compute_gaia_variability_score() uses DSC quasar prob + variability flag.
+    var_result = compute_gaia_variability_score({
+        'classprob_dsc_combmod_quasar': classprob_quasar,
+        'phot_g_mean_flux_over_error':  _safe_float('phot_g_mean_flux_over_error')
+                                        if 'phot_g_mean_flux_over_error' in tbl.colnames
+                                        else np.nan,
+        'phot_variable_flag': phot_var_flag,
+    })
+    gaia_var_score = var_result['gaia_variability_score']
 
     # ---- Quasar probability advisory check ----------------------------------
     quasar_class = check_gaia_quasar_classification(classprob_quasar, source_id)
@@ -203,12 +365,14 @@ def query_gaia_dr3(ra, dec, source_id):
         'ruwe': ruwe,
         'pm_sig': pm_sig,
         'gaia_pm_unknown': gaia_pm_unknown,
-        'passes_pm_filter': passes_pm,
+        'passes_pm_filter': passes_pm,           # backward-compat alias
+        'passes_gaia_filter': passes_gaia_filter, # gaia-C1: unified filter result
         'passes_ruwe': passes_ruwe,
         'astrometric_excess_noise_sig': excess_noise_sig,
         'phot_g_mean_mag': g_mag,
         'phot_variable_flag': phot_var_flag,
         'gaia_variability_score': gaia_var_score,
+        'gaia_variability_evidence': var_result.get('gaia_variability_evidence', 'none'),
         'classprob_quasar': classprob_quasar,
         'classprob_galaxy': classprob_galaxy,
         # parallax for foreground star rejection
@@ -221,7 +385,14 @@ def query_gaia_dr3(ra, dec, source_id):
         'gaia_quality_flag': ruwe_quality_flag,
         'gaia_quasar_class': quasar_class,
         'gaia_ang_sep_arcsec': float(ang_sep_arcsec),
-        'gaia_match_method': 'nearest_within_1arcsec',
+        'gaia_match_method': f'nearest_within_{GAIA_ACCEPT_RADIUS_ARCSEC}arcsec',
+        # gaia-C1: unified star rejection detail
+        'star_reject_as_star':       star_result['reject_as_star'],
+        'star_rejection_reason':     star_result['rejection_reason'],
+        'star_confidence':           star_result['confidence'],
+        'star_n_criteria_triggered': star_result['n_criteria_triggered'],
+        'star_requires_confirmation': star_result.get('requires_confirmation', False),
+        'gaia_astrometry':           star_result.get('gaia_astrometry', 'available'),
     }
 
 

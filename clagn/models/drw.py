@@ -119,7 +119,7 @@ def _drw_nll(log_sigma, log_tau, times, fluxes, flux_errors):
 
 
 def _drw_predict(times_train, fluxes_train, flux_errors_train,
-                 times_pred, sigma, tau):
+                 times_pred, sigma, tau, mu_flux=None):
     """
     Compute GP posterior mean and standard deviation at prediction times.
 
@@ -127,11 +127,18 @@ def _drw_predict(times_train, fluxes_train, flux_errors_train,
         μ_pred = K_cross @ K_train^{-1} @ y
         σ²_pred = diag(K_pred) - diag(K_cross @ K_train^{-1} @ K_cross^T)
 
+    R2 FIX 5: If mu_flux is provided, it is added back to pred_mean after
+    the GP computation (fluxes_train should be mean-centered before calling).
+
     Parameters
     ----------
     times_train, fluxes_train, flux_errors_train : training data
+        fluxes_train should be mean-centered if mu_flux is provided.
     times_pred  : array, prediction MJDs
     sigma, tau  : MAP DRW parameters
+    mu_flux     : float or None
+        Mean flux (mJy) to add back to the GP posterior mean.
+        Pass the weighted-mean flux used to center fluxes_train.
 
     Returns
     -------
@@ -159,6 +166,10 @@ def _drw_predict(times_train, fluxes_train, flux_errors_train,
     except Exception:
         pred_mean = np.full(len(times_pred), np.nanmean(fluxes_train))
         pred_std = np.full(len(times_pred), sigma)
+
+    # R2 FIX 5: Add mean flux back so pred_mean is in physical (un-centered) units
+    if mu_flux is not None:
+        pred_mean = pred_mean + float(mu_flux)
 
     return pred_mean, pred_std
 
@@ -380,9 +391,13 @@ def fit_drw_map(times, fluxes, flux_errors, z=0.0):
     sigma = map_result['sigma_drw']
 
     # ---- GP posterior prediction on full light curve ------------------------
-    # Subsample training set for prediction (avoids huge matrices)
+    # R2 FIX 5: Pass mean-centered fluxes to _drw_predict; add mu_flux back inside.
     t_s, f_s, e_s, _ = _maybe_subsample(times_rest, fluxes, flux_errors)
-    pred_mean, pred_std = _drw_predict(t_s, f_s, e_s, times_rest, sigma, tau)
+    mu_flux = float(map_result.get('mu_flux_mjy', 0.0))
+    f_s_centered = f_s - mu_flux
+    pred_mean, pred_std = _drw_predict(
+        t_s, f_s_centered, e_s, times_rest, sigma, tau, mu_flux=mu_flux
+    )
 
     # ---- Standardized residuals (should be ~N(0,1) for stationary DRW) -----
     total_std = np.sqrt(pred_std**2 + flux_errors**2)
@@ -390,6 +405,7 @@ def fit_drw_map(times, fluxes, flux_errors, z=0.0):
 
     map_result['residuals'] = residuals
     map_result['pred_mean'] = pred_mean
+    map_result['pred_mean_mjy'] = pred_mean   # R2 FIX 5: explicit physical-units alias
     map_result['pred_std'] = pred_std
     map_result['times_rest'] = times_rest
 
@@ -746,3 +762,150 @@ def compute_drw_nonstationarity(times, fluxes, flux_errors, z, tau, sigma_drw):
         'mean_late_mjy':         float(late_median),
         'valid':                 True,
     }
+
+
+# ---------------------------------------------------------------------------
+# R2 FIX 6: DRW simulation and nonstationarity threshold calibration
+# ---------------------------------------------------------------------------
+
+def simulate_drw(sigma, tau, times, seed=None, mu_flux=0.0):
+    """
+    Simulate a stationary DRW (Ornstein-Uhlenbeck) light curve.
+
+    Uses the exact discrete OU update:
+        x(t+dt) = x(t) * exp(-dt/τ) + σ * sqrt(1 - exp(-2dt/τ)) * N(0,1)
+
+    Parameters
+    ----------
+    sigma : float
+        DRW amplitude in the same units as mu_flux (mJy).
+    tau : float
+        DRW timescale in days.
+    times : array-like
+        Output times in MJD (need not be equally spaced or sorted).
+    seed : int or None
+        Random seed for reproducibility.
+    mu_flux : float
+        Mean flux level to add to the zero-mean OU process.
+
+    Returns
+    -------
+    flux : ndarray
+        Simulated flux at each input time (same ordering as times input).
+    """
+    times = np.asarray(times, dtype=float)
+    sort_idx = np.argsort(times)
+    t_sorted = times[sort_idx]
+    rng = np.random.default_rng(seed)
+    n = len(t_sorted)
+    x = np.zeros(n)
+    # Initial draw from stationary distribution N(0, σ²)
+    x[0] = rng.normal(0.0, sigma)
+    for i in range(1, n):
+        dt = t_sorted[i] - t_sorted[i - 1]
+        if dt <= 0:
+            x[i] = x[i - 1]
+            continue
+        decay = np.exp(-dt / max(tau, 1e-10))
+        noise_var = sigma ** 2 * (1.0 - decay ** 2)
+        x[i] = x[i - 1] * decay + rng.normal(0.0, np.sqrt(max(noise_var, 0.0)))
+    # Add mean and unsort to original ordering
+    flux_sorted = x + float(mu_flux)
+    flux = np.empty(n)
+    flux[sort_idx] = flux_sorted
+    return flux
+
+
+def calibrate_nonstationarity_threshold(sigma, tau, baseline_days,
+                                         n_seasons=8, n_simulations=1000,
+                                         target_fpr=0.05, seed=42):
+    """
+    Calibrate the nonstationarity_sigma detection threshold via Monte Carlo.
+
+    Simulates stationary DRW light curves with given (σ, τ) and measures
+    the distribution of nonstationarity_sigma under H0 (stationary DRW).
+    Returns the threshold such that only target_fpr of stationary DRWs exceed it.
+
+    Use this to set source-specific CLAGN selection thresholds rather than the
+    global heuristic of 3σ.
+
+    Parameters
+    ----------
+    sigma : float, DRW amplitude (mJy)
+    tau : float, DRW timescale (days)
+    baseline_days : float, total light curve baseline (days)
+    n_seasons : int, number of WISE seasons to simulate per realisation
+    n_simulations : int, number of Monte Carlo realisations
+    target_fpr : float, desired false positive rate (default 0.05)
+    seed : int, master random seed
+
+    Returns
+    -------
+    threshold : float
+        nonstationarity_sigma value above which only target_fpr of stationary
+        DRWs fall. Use this for calibrated CLAGN selection.
+    threshold_dict : dict
+        Full percentile distribution and metadata for diagnostics.
+    """
+    rng = np.random.default_rng(seed)
+    # Build template times: n_seasons seasons with ~6 epochs each
+    season_starts = np.linspace(0, baseline_days, n_seasons + 1)[:-1]
+    times_template = []
+    for t_start in season_starts:
+        times_template.extend(t_start + rng.uniform(0, 150, size=6).tolist())
+    times_template = np.array(sorted(times_template))
+
+    nonstat_sigmas = []
+    for _ in range(n_simulations):
+        sim_seed = int(rng.integers(0, 2 ** 31))
+        flux = simulate_drw(sigma, tau, times_template, seed=sim_seed, mu_flux=1.0)
+        noise_level = max(sigma * 0.1, 1e-6)
+        flux_obs = flux + rng.normal(0.0, noise_level, size=len(flux))
+
+        # Evaluate nonstationarity sigma inline (avoids circular import)
+        idx = np.argsort(times_template)
+        t_s = times_template[idx]
+        f_s = flux_obs[idx]
+        mjd_mid = np.median(t_s)
+        early_mask = t_s <= mjd_mid
+        late_mask  = t_s > mjd_mid
+        if early_mask.sum() < 3 or late_mask.sum() < 3:
+            continue
+        mean_early = float(np.median(f_s[early_mask]))
+        mean_late  = float(np.median(f_s[late_mask]))
+        delta = abs(mean_late - mean_early)
+        N_half = max(early_mask.sum(), late_mask.sum())
+        T_half = abs(t_s[late_mask].mean() - t_s[early_mask].mean())
+        drw_var = sigma ** 2 * (1.0 - np.exp(-T_half / max(tau, 1.0)))
+        sigma_drw_exp = sigma * np.sqrt(2.0 / N_half) * (
+            1.0 + np.sqrt(max(drw_var / (sigma ** 2 + 1e-30), 0.01))
+        )
+        sigma_meas = noise_level * np.sqrt(1.0 / early_mask.sum() + 1.0 / late_mask.sum())
+        sigma_total = np.sqrt(sigma_drw_exp ** 2 + sigma_meas ** 2)
+        if sigma_total > 0:
+            nonstat_sigmas.append(delta / sigma_total)
+
+    if len(nonstat_sigmas) < 10:
+        return 3.0, {'p50': 1.0, 'p95': 3.0, 'p99': 5.0, 'n_valid': len(nonstat_sigmas)}
+
+    arr = np.array(nonstat_sigmas)
+    pct_level = (1.0 - target_fpr) * 100.0
+    threshold = float(np.percentile(arr, pct_level))
+    threshold_dict = {
+        'p50': float(np.percentile(arr, 50)),
+        'p95': float(np.percentile(arr, 95)),
+        'p99': float(np.percentile(arr, 99)),
+        f'p{int(pct_level)}': threshold,
+        'n_valid': len(nonstat_sigmas),
+        'n_simulations': n_simulations,
+        'target_fpr': target_fpr,
+        'sigma_input': sigma,
+        'tau_input': tau,
+        'baseline_days': baseline_days,
+    }
+    logger.info(
+        "DRW calibrate_nonstationarity_threshold: σ=%.3f mJy, τ=%.0f d → "
+        "threshold (fpr=%.2f) = %.2f",
+        sigma, tau, target_fpr, threshold
+    )
+    return threshold, threshold_dict

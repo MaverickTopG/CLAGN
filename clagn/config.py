@@ -29,6 +29,10 @@ WISE_ZERO_POINTS = {
 # Alias for use in new functions
 WISE_VEGA_ZERO_POINTS = WISE_ZERO_POINTS
 
+# Scalar aliases used by validate_config() and external callers (config-C1)
+WISE_W1_ZERO_POINT_JY = WISE_ZERO_POINTS['W1']   # = 309.540 Jy (Wright+2010 Table 1)
+WISE_W2_ZERO_POINT_JY = WISE_ZERO_POINTS['W2']   # = 171.787 Jy (Wright+2010 Table 1)
+
 # ---------------------------------------------------------------------------
 # WISE global season anchor (FLAW A2)
 # All sources use this same anchor so season boundaries are identical.
@@ -158,24 +162,27 @@ def flux_mjy_to_mag(flux_mjy, flux_err_mjy, band):
 
 
 # ---------------------------------------------------------------------------
-# FIX 4: NEOWISE W2 systematic flagging
+# FIX wise-H6 / wise-M10: WISE systematic windows
 # ---------------------------------------------------------------------------
-WISE_KNOWN_SYSTEMATICS = [
-    {
-        'band': 'W2',
-        'mjd_start': 57000,
-        'mjd_end': 57071,
-        'description': 'Incorrect ZP adjustment applied in W2 (NEOWISE docs)',
-        'action': 'flag_epochs',
-        'magnitude_offset': 0.01,
-    },
-    {
-        'band': 'W1',
-        'mjd_start': 55400,
-        'mjd_end': 56200,
-        'description': 'WISE hibernation gap — no data, not an artifact',
-        'action': 'flag_gap',
-    },
+# WISE_KNOWN_SYSTEMATICS has been cleared (config-C1 / wise-M10):
+#   - Removed bogus W1 "hibernation gap" at MJD 55400-56200 (wrong dates; no data exists
+#     there anyway — WISE was hibernating at MJD 55593-56987).
+#   - Removed uncited W2 entry at MJD 57000-57071 (no NEOWISE release-note citation found).
+#   An uncited systematic "correction" is worse than no correction (wise-M10).
+WISE_KNOWN_SYSTEMATICS = []   # No validated WISE-cryo-era systematics to flag
+
+# NEOWISE-R systematics: only include entries with explicit NEOWISE release notes citations.
+# Currently empty — add entries when a verified citation is found.
+WISE_NEOWISE_KNOWN_SYSTEMATICS = [
+    # {
+    #     'mjd_start':   ...,
+    #     'mjd_end':     ...,
+    #     'band':        'W1' or 'W2',
+    #     'description': '...',
+    #     'citation':    'NEOWISE YYYY Data Release Notes, Section X.X',  # REQUIRED
+    #     'action':      'inflate_uncertainty',
+    #     'sigma_inflation_factor': 2.0,
+    # }
 ]
 
 
@@ -255,15 +262,33 @@ def check_wise_saturation(w1_mag_median, w2_mag_median):
 
 # ---------------------------------------------------------------------------
 # Quality thresholds
+# NOTE: these are pipeline engineering choices, not universal physics laws.
+# Sensitivity to these thresholds should be tested before publication.
 # ---------------------------------------------------------------------------
-MIN_BASELINE_YEARS     = 10.0    # Minimum light curve baseline (Ricci+2022: CS transitions need decades)
+MIN_BASELINE_YEARS     = 7.0     # config-H2: was 10.0; NEOWISE-R started Dec 2013 (MJD 56987);
+                                  # as of 2026, max baseline is ~12 yr. 7 yr >> 10*tau for tau~300d.
+                                  # SENSITIVITY TEST REQUIRED: re-run with 5.0 and 10.0.
 MIN_EPOCHS             = 20      # Minimum WISE single-exposure epochs
 MIN_EPOCHS_PRE_GAP     = 5       # Minimum epochs from AllWISE (pre-hibernation)
 MIN_EPOCHS_POST_GAP    = 5       # Minimum epochs from NEOWISE-R (post-hibernation)
-MIN_REDSHIFT           = 0.002   # z < 0.002 = likely Galactic, not extragalactic AGN
+MIN_REDSHIFT           = 0.002   # z < 0.002 = likely Galactic (not hard physics — see config-H2)
+                                  # SENSITIVITY TEST REQUIRED: check sources in 0.002-0.01.
 MAX_REDSHIFT           = 5.0     # Beyond this WISE W1/W2 probe rest-frame UV, not IR torus
 MAX_PROPER_MOTION_SIG  = 3.0     # Sigma threshold for star rejection via GAIA PM
-MAX_RUWE               = 1.4     # GAIA astrometric quality (point source requirement)
+MAX_RUWE               = 1.4     # GAIA RUWE soft-flag threshold (gaia-H3: NOT a hard cut alone)
+MAX_PARALLAX_SIG       = 3.0     # Sigma threshold for parallax-based star rejection (gaia-C1)
+RUWE_HARD_REJECT       = 2.5     # Reject on RUWE alone only above this (gaia-H3)
+RUWE_SOFT_FLAG         = 1.4     # Flag for review; hard-reject only with corroboration (gaia-H3)
+
+# Sensitivity analysis parameters (config-H2)
+SENSITIVITY_THRESHOLDS_TO_TEST = {
+    'MIN_BASELINE_YEARS':    [5.0, 7.0, 10.0],
+    'MIN_REDSHIFT':          [0.002, 0.005, 0.01],
+    'SIGMA_CLIP_SIGMA':      [3.5, 4.0, 5.0],
+    'MIN_DELTA_MAG':         [0.2, 0.3, 0.4],
+    'MIN_EPOCHS_PER_SEASON': [2, 3, 5],
+    # Run sensitivity_test.py before paper submission
+}
 
 # ---------------------------------------------------------------------------
 # AGN WISE color selection (Stern et al. 2012, ApJ 753 30)
@@ -305,13 +330,27 @@ MAX_SCORE = sum(SCORE_WEIGHTS.values())  # = 14.0
 WISE_ALLWISE_SEARCH_RADIUS_ARCSEC = 8.0    # 8" to capture nearby Seyferts where WISE centroid offset from nucleus
 WISE_NEOWISE_SEARCH_RADIUS_ARCSEC = 6.0   # 6" to capture high-dec sources with larger position scatter
 WISE_SEARCH_RADIUS_ARCSEC  = 6.0   # Legacy / NEOWISE-R default
-GAIA_SEARCH_RADIUS_ARCSEC  = 1.5
+GAIA_SEARCH_RADIUS_ARCSEC  = 2.0    # gaia-H2: query radius (generous — catch potential matches)
+GAIA_ACCEPT_RADIUS_ARCSEC  = 1.0    # gaia-H2: acceptance radius (tighter — reduce contamination)
+# Two-stage justification: query 2.0" to find nearest match, accept only within 1.0" to
+# limit contamination. This justification must appear in the paper Methods section.
 
 # ---------------------------------------------------------------------------
 # WISE gap: satellite was hibernating (do not interpolate across this)
+# WISE mission timeline (from NASA/IPAC WISE mission descriptions):
+#   Cryogenic:    MJD 55200 – 55457  (Jan 2010 – Aug 2010)
+#   3-Band Cryo:  MJD 55457 – 55468  (Aug 2010)
+#   Post-Cryo:    MJD 55468 – 55593  (Aug 2010 – Dec 2010)
+#   Hibernation:  MJD 55593 – 56987  (Feb 2011 – Dec 2013)  ← CORRECT (wise-H6)
+#   NEOWISE-R:    MJD 56987 – present (Dec 2013 – )
 # ---------------------------------------------------------------------------
-WISE_HIBERNATION_MJD_START = 55593   # 2011-02-17
-WISE_HIBERNATION_MJD_END   = 56141   # 2012-08-08
+# Canonical names (wise-H6)
+WISE_HIBERNATION_START_MJD = 55593   # 2011-02-17
+WISE_HIBERNATION_END_MJD   = 56987   # 2013-12-13 (NEOWISE-R start — actual end of hibernation)
+
+# Backward-compatible aliases (keep so existing imports don't break)
+WISE_HIBERNATION_MJD_START = WISE_HIBERNATION_START_MJD
+WISE_HIBERNATION_MJD_END   = WISE_HIBERNATION_END_MJD    # FIXED: was 56141 (wrong)
 
 # ---------------------------------------------------------------------------
 # Sigma clipping for outlier rejection before DRW fit
@@ -425,6 +464,42 @@ SIGMA_EXCESS_LUM_SLOPE     = -0.5   # sigma ∝ L^(-0.5)
 OUTPUT_CSV_FLOAT_FORMAT = '%.6f'
 
 # ---------------------------------------------------------------------------
+# config-H3: Runtime schema verification for WISE tables
+# ---------------------------------------------------------------------------
+# Minimal columns required from each IRSA table — hard-fail if missing.
+WISE_TABLE_REQUIRED_COLS = {
+    'allwise_p3as_mep': [
+        'ra', 'dec', 'w1mpro', 'w1sigmpro', 'w2mpro', 'w2sigmpro',
+        'cc_flags', 'qi_fact', 'mjd',
+    ],
+    'neowiser_p1bs_psd': [
+        'ra', 'dec', 'w1mpro', 'w1sigmpro', 'w2mpro', 'w2sigmpro',
+        'cc_flags', 'qi_fact', 'mjd',
+    ],
+    'wise_allsky_4band_p1bs_psd': [
+        'ra', 'dec', 'w1mpro', 'w1sigmpro', 'w2mpro', 'w2sigmpro',
+        'cc_flags', 'qi_fact', 'mjd',
+    ],
+    'wise_3band_p1bs_psd': [
+        'ra', 'dec', 'w1mpro', 'w1sigmpro', 'w2mpro', 'w2sigmpro',
+        'cc_flags', 'qi_fact', 'mjd',
+    ],
+    'wise_postcryo': [
+        'ra', 'dec', 'w1mpro', 'w1sigmpro', 'w2mpro', 'w2sigmpro',
+        'cc_flags', 'qi_fact', 'mjd',
+    ],
+}
+
+# Optional columns — warn if missing but don't hard-fail.
+WISE_TABLE_OPTIONAL_COLS = {
+    'allwise_p3as_mep':          ['moon_masked', 'saa_sep', 'qual_frame', 'w3mpro', 'w4mpro'],
+    'neowiser_p1bs_psd':         ['moon_masked', 'saa_sep', 'qual_frame'],
+    'wise_allsky_4band_p1bs_psd': ['moon_masked', 'saa_sep', 'nb', 'w3mpro', 'w4mpro'],
+    'wise_3band_p1bs_psd':       ['moon_masked', 'saa_sep', 'nb', 'w3mpro'],
+    'wise_postcryo':             ['moon_masked', 'saa_sep', 'nb'],
+}
+
+# ---------------------------------------------------------------------------
 # WISE complete dataset tables (Expansion 1)
 # ---------------------------------------------------------------------------
 WISE_ALLSKY_TABLE     = "wise_allsky_4band_p1bs_psd"
@@ -499,7 +574,8 @@ DRW_STRICT_SIGN_CHECK = False
 
 def delta_mag_from_flux_ratio(flux_ratio):
     """Return delta_mag = +2.5 * log10(flux_ratio). flux_ratio > 0 required."""
-    assert flux_ratio > 0
+    if flux_ratio <= 0:
+        raise ValueError(f"flux_ratio must be positive, got {flux_ratio}")
     return 2.5 * np.log10(flux_ratio)
 
 
@@ -510,9 +586,34 @@ def flux_ratio_from_delta_mag(delta_mag):
 
 def delta_mag_from_fluxes(F_early, F_late):
     """Return delta_mag = +2.5 * log10(F_late / F_early). Both fluxes > 0 required."""
-    assert F_early > 0 and F_late > 0
+    if F_early <= 0 or F_late <= 0:
+        raise ValueError(
+            f"Both fluxes must be positive, got F_early={F_early}, F_late={F_late}"
+        )
     return delta_mag_from_flux_ratio(F_late / F_early)
 
+
+# ---------------------------------------------------------------------------
+# R2 FIX 12: Threshold provenance grouping
+# ---------------------------------------------------------------------------
+
+# --- Literature-derived thresholds ---
+# Ricci & Trakhtenbrot 2022 (arXiv:2211.05132): min amplitude for CLAGN
+CLAGN_MIN_DELTA_MAG = 0.3          # mag; |delta_mag| >= 0.3 for CLAGN candidacy
+# Stern et al. 2012 (ApJ 753 30): AGN wedge W1-W2 color cut (Vega)
+CLAGN_W1_W2_AGN_MIN = 0.8          # W1-W2 Vega mag
+# Kozlowski et al. 2017 (arXiv:1611.08248): DRW reliability baseline criterion
+DRW_MIN_BASELINE_X_TAU = 10.0      # baseline_rest >= 10 × tau_rest for reliable fit
+
+# --- Engineering/empirical thresholds ---
+# Calibrated to WISE survey cadence: ~6-month visits, hibernate gap ~ 1.3 yr
+SEASON_GAP_DAYS = 120.0            # min inter-observation gap (days) to split seasons
+MIN_EPOCHS_PER_SEASON = 3          # min epochs per season for median to be robust
+MIN_SEASONS_REQUIRED = 4           # min seasons for delta_mag computation
+# Artifact rejection (score-H8): single-epoch driven threshold
+ARTIFACT_AMPLITUDE_DROP = 0.40     # fraction: if removing worst epoch reduces |dm| by this, flag artifact
+# W1/W2 coherence: direction is indeterminate when fractional change < this
+COHERENCE_FLATNESS_THRESH = 0.02   # fractional flux change threshold for "flat" season
 
 # ---------------------------------------------------------------------------
 # Fix #22: Source ID type convention helpers
@@ -526,3 +627,67 @@ def normalize_source_id(sid):
 def normalize_gaia_id(gaia_sid):
     """Always return int. Use when passing to GAIA queries."""
     return int(gaia_sid)
+
+
+# ---------------------------------------------------------------------------
+# config-C1: Programmatic validation of all critical constants
+# ---------------------------------------------------------------------------
+
+def validate_config():
+    """
+    Validate critical pipeline constants at startup.
+
+    Called at the top of main.py to hard-fail on misconfiguration.
+    Replaces 'must match exactly' comments with actual enforcement.
+
+    Raises
+    ------
+    ValueError if any critical constant is wrong.
+
+    Returns
+    -------
+    True if all checks pass.
+    """
+    errors = []
+
+    # WISE zero points (Wright+2010, Table 1) — authoritative values
+    W1_ZP_EXPECTED = 309.540   # Jy
+    W2_ZP_EXPECTED = 171.787   # Jy
+    if abs(WISE_W1_ZERO_POINT_JY - W1_ZP_EXPECTED) > 0.001:
+        errors.append(
+            f"WISE_W1_ZERO_POINT_JY={WISE_W1_ZERO_POINT_JY} "
+            f"!= Wright+2010 value {W1_ZP_EXPECTED}"
+        )
+    if abs(WISE_W2_ZERO_POINT_JY - W2_ZP_EXPECTED) > 0.001:
+        errors.append(
+            f"WISE_W2_ZERO_POINT_JY={WISE_W2_ZERO_POINT_JY} "
+            f"!= Wright+2010 value {W2_ZP_EXPECTED}"
+        )
+
+    # MAX_SCORE_V2 must equal sum of SCORE_WEIGHTS_V2
+    max_score_computed = sum(SCORE_WEIGHTS_V2.values())
+    if abs(max_score_computed - MAX_SCORE_V2) > 0.01:
+        errors.append(
+            f"MAX_SCORE_V2={MAX_SCORE_V2} != sum(SCORE_WEIGHTS_V2)={max_score_computed:.3f}"
+        )
+
+    # Season anchor must be before first WISE data
+    if WISE_SEASON_ANCHOR_MJD > 55200.0:
+        errors.append(
+            f"WISE_SEASON_ANCHOR_MJD={WISE_SEASON_ANCHOR_MJD} > 55200 "
+            f"(WISE first light). Anchor must precede all data."
+        )
+
+    # Hibernation dates must be logically consistent
+    if WISE_HIBERNATION_START_MJD >= WISE_HIBERNATION_END_MJD:
+        errors.append(
+            f"WISE_HIBERNATION_START_MJD={WISE_HIBERNATION_START_MJD} >= "
+            f"WISE_HIBERNATION_END_MJD={WISE_HIBERNATION_END_MJD} — invalid range"
+        )
+
+    if errors:
+        raise ValueError(
+            "Config validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        )
+
+    return True

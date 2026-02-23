@@ -5,7 +5,7 @@ Survey phases:
     AllSky    : 2010-01-14 – 2010-08-06 (4-band, fully cryogenic)
     3Band     : 2010-08-06 – 2010-09-29 (W1/W2/W3, partial cryogen)
     PostCryo  : 2010-09-29 – 2011-02-01 (W1/W2 only, no cryogen)
-    [HIBERNATION 2011-02-17 – 2012-08-08, MJD 55593-56141]
+    [HIBERNATION 2011-02-17 – 2013-12-13, MJD 55593-56987]  (wise-H6 corrected)
     NEOWISE-R : 2013-12-13 – present   (W1/W2 only)
     AllWISE   : legacy catalog (handled by .wise module)
 
@@ -30,14 +30,18 @@ from ..config import (
     WISE_FULL_BASELINE_START_MJD,
     WISE_HIBERNATION_MJD_START,
     WISE_HIBERNATION_MJD_END,
+    WISE_HIBERNATION_START_MJD,
+    WISE_HIBERNATION_END_MJD,
     WISE_ZERO_POINTS,
     WISE_NEOWISE_SEARCH_RADIUS_ARCSEC,
     WISE_SEASON_ANCHOR_MJD,
+    WISE_TABLE_REQUIRED_COLS,
     SIGMA_CLIP_SIGMA,
     SIGMA_CLIP_ITERS,
     flag_systematic_epochs,
     check_wise_saturation,
 )
+from ..models.variability import cluster_epochs_into_seasons
 from .wise import query_wise_lightcurve
 
 logger = logging.getLogger(__name__)
@@ -275,34 +279,367 @@ def _quality_filter_early(df: pd.DataFrame, dataset: str) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
+# wise-C4: Schema-safe moon_masked parser + table schema validator
+# ---------------------------------------------------------------------------
+
+def _parse_moon_masked(series):
+    """
+    Parse WISE moon_masked column safely across table schema variants.
+
+    Known formats across WISE releases:
+    - Integer 0/1: 0=not masked, 1=masked (applies to all bands)
+    - String '0000': per-band, character per band W1W2W3W4
+    - String '0': single character, applies to all bands
+    - NaN/None: treat as masked (conservative)
+
+    Returns dict of bool arrays: w1_moon, w2_moon, parse_format
+    """
+    n = len(series)
+    w1_moon = np.zeros(n, dtype=bool)
+    w2_moon = np.zeros(n, dtype=bool)
+
+    # Fill NaN conservatively (unknown = assume masked)
+    filled = series.fillna('1')
+
+    try:
+        # Try numeric first
+        numeric = pd.to_numeric(filled, errors='coerce')
+        if numeric.notna().all():
+            # Pure integer format — applies to all bands
+            masked = numeric.astype(int) != 0
+            return {'w1_moon': masked.values, 'w2_moon': masked.values,
+                    'parse_format': 'integer'}
+    except Exception:
+        pass
+
+    # String format
+    s = filled.astype(str).str.strip()
+
+    if s.str.len().max() >= 2:
+        # Per-band string encoding
+        w1_moon = (s.str[0] != '0').values
+        w2_moon = (s.str[1] != '0').values
+        fmt = 'per_band_string'
+    else:
+        # Single character — applies to all bands
+        masked = (s.str[0] != '0').values
+        w1_moon = masked
+        w2_moon = masked
+        fmt = 'single_char_string'
+
+    return {'w1_moon': w1_moon, 'w2_moon': w2_moon, 'parse_format': fmt}
+
+
+def _validate_table_schema(df, table_name, required_cols):
+    """
+    Hard-fail if required columns are missing — never silently proceed.
+
+    Parameters
+    ----------
+    df : DataFrame
+    table_name : str
+    required_cols : list of str
+
+    Returns
+    -------
+    True if all required columns are present.
+
+    Raises
+    ------
+    ValueError if any required columns are missing.
+    """
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Table '{table_name}' missing required columns: {missing}. "
+            f"Available: {list(df.columns)}. "
+            f"Check IRSA table schema — it may have changed."
+        )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# wise-C3: Per-band quality flag parsing
+# ---------------------------------------------------------------------------
+
+def parse_wise_quality_flags(df):
+    """
+    Parse WISE cc_flags, qi_fact, moon_masked into per-band boolean masks.
+
+    cc_flags encoding (WISE Explanatory Supplement, Cutri+2012):
+        Character 0: W1 artifact contamination
+        Character 1: W2 artifact contamination
+        Character 2: W3 artifact contamination
+        Character 3: W4 artifact contamination
+        '0' = no artifact, other = contaminated
+
+    Previously only W1 (char[0]) was checked — W2 artifacts were silently
+    passed through, producing fake W1-W2 color evolution (wise-C3).
+
+    Returns df with added columns:
+        w1_quality_ok : bool — W1 epoch passes quality cuts
+        w2_quality_ok : bool — W2 epoch passes quality cuts
+        quality_parse_method : str — which parsing path was used
+    """
+    n = len(df)
+    w1_ok = np.ones(n, dtype=bool)
+    w2_ok = np.ones(n, dtype=bool)
+    parse_method = 'default'
+
+    if 'cc_flags' in df.columns:
+        cc = df['cc_flags'].fillna('0000').astype(str).str.strip().str.ljust(4, '0')
+        # W1: character 0, W2: character 1 (separate per-band — wise-C3 fix)
+        w1_ok &= (cc.str[0] == '0').values
+        w2_ok &= (cc.str[1] == '0').values
+        parse_method = 'cc_flags_per_band'
+
+    if 'qi_fact' in df.columns:
+        qi = pd.to_numeric(df['qi_fact'], errors='coerce').fillna(0)
+        w1_ok &= (qi > 0).values
+        w2_ok &= (qi > 0).values
+
+    if 'moon_masked' in df.columns:
+        # Schema-safe moon_masked parsing (wise-C4)
+        mm = _parse_moon_masked(df['moon_masked'])
+        w1_ok &= ~mm['w1_moon']
+        w2_ok &= ~mm['w2_moon']
+
+    df = df.copy()
+    df['w1_quality_ok']        = w1_ok
+    df['w2_quality_ok']        = w2_ok
+    df['quality_parse_method'] = parse_method
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# wise-C1: Within-season sigma clipping (replaces global sigma clip)
+# ---------------------------------------------------------------------------
+
+def sigma_clip_within_seasons(times_mjd, flux_mjy, flux_err_mjy,
+                               season_id, sigma_thresh=4.0):
+    """
+    Sigma clip WITHIN each season, not globally.
+
+    Why within-season (wise-C1):
+    - Each season has a roughly stable flux level
+    - Outliers within a season are likely instrumental artifacts
+    - Cross-season flux differences ARE the CLAGN signal — never clip those
+    - Global sigma clip destroys the bimodal flux distribution of a CLAGN turn-on
+
+    Why sigma_thresh=4.0 (conservative):
+    - CLAGN transitions can produce ~2-3 sigma excursions at season level
+    - 4-sigma within a season is almost certainly an artifact
+    - Never go below 3.5 for CLAGN science
+
+    Parameters
+    ----------
+    times_mjd : array of MJD
+    flux_mjy : array of flux densities (mJy)
+    flux_err_mjy : array of flux uncertainties (mJy)
+    season_id : 1D int array from cluster_epochs_into_seasons()
+    sigma_thresh : float, clip threshold (default 4.0)
+
+    Returns
+    -------
+    keep : bool array — True = keep, False = clip
+    clip_reason : str array — reason for each clipped point
+    """
+    keep = np.ones(len(flux_mjy), dtype=bool)
+    clip_reason = np.full(len(flux_mjy), '', dtype=object)
+
+    for s in np.unique(season_id):
+        if s < 0:
+            continue
+        mask = season_id == s
+        if mask.sum() < 4:
+            continue
+
+        f_s = flux_mjy[mask]
+
+        # Robust season median
+        med_s = float(np.median(f_s))
+
+        # MAD-based robust scatter
+        mad_s = float(np.median(np.abs(f_s - med_s)))
+        rob_sigma = 1.4826 * mad_s
+
+        if rob_sigma < 1e-10:
+            continue
+
+        # Clip points beyond sigma_thresh * rob_sigma from season median
+        deviant = np.abs(f_s - med_s) > sigma_thresh * rob_sigma
+
+        # Apply back to global keep array
+        season_indices = np.where(mask)[0]
+        for i, d in zip(season_indices, deviant):
+            if d:
+                keep[i] = False
+                clip_reason[i] = f'within_season_s{s}_>{sigma_thresh}sigma'
+
+    return keep, clip_reason
+
+
+# ---------------------------------------------------------------------------
+# wise-C2: Visit-level weighted mean aggregation (replaces _deduplicate)
+# ---------------------------------------------------------------------------
+
+def aggregate_to_visits(df, max_visit_gap_days=0.5,
+                         time_col='mjd',
+                         w1_flux_col='w1_flux_mjy',
+                         w1_err_col='w1_flux_err_mjy',
+                         w2_flux_col='w2_flux_mjy',
+                         w2_err_col='w2_flux_err_mjy'):
+    """
+    Aggregate individual WISE exposures into per-visit inverse-variance weighted means.
+
+    A "visit" is a group of consecutive exposures with gaps < max_visit_gap_days.
+    0.5 days captures within-night WISE scanning without merging distinct visits.
+
+    Replaces _deduplicate() which kept only the best-SNR single point — statistically
+    wrong because it discards information and biases flux toward low-scatter exposures.
+
+    For each visit:
+    - Compute inverse-variance weighted mean flux (W1 and W2)
+    - Propagate formal uncertainty: sigma_visit = 1/sqrt(sum(1/sigma_i^2))
+    - Store n_exp (number of exposures) and intra-visit scatter
+
+    Returns
+    -------
+    DataFrame with one row per visit.
+    """
+    if df.empty:
+        return df
+
+    df_sorted = df.sort_values(time_col).copy()
+    t = df_sorted[time_col].values
+
+    # Assign visit IDs by gap
+    visit_id = np.zeros(len(t), dtype=int)
+    vid = 0
+    for i in range(1, len(t)):
+        if (t[i] - t[i - 1]) > max_visit_gap_days:
+            vid += 1
+        visit_id[i] = vid
+    df_sorted['visit_id'] = visit_id
+
+    rows = []
+    for vid, grp in df_sorted.groupby('visit_id'):
+        row = {'mjd': float(grp[time_col].median()),
+               'n_exp': len(grp)}
+
+        # W1 weighted mean
+        if w1_flux_col in grp.columns:
+            f1 = pd.to_numeric(grp[w1_flux_col], errors='coerce').values
+            e1 = pd.to_numeric(grp[w1_err_col],  errors='coerce').values
+            valid1 = np.isfinite(f1) & np.isfinite(e1) & (e1 > 0) & (f1 > 0)
+            if valid1.sum() > 0:
+                w1 = 1.0 / e1[valid1] ** 2
+                row['w1_flux_mjy']           = float(np.sum(w1 * f1[valid1]) / np.sum(w1))
+                row['w1_flux_err_mjy']       = float(np.sqrt(1.0 / np.sum(w1)))
+                row['n_exp_w1']              = int(valid1.sum())
+                row['w1_intravisit_scatter'] = float(np.std(f1[valid1])) if valid1.sum() > 1 else 0.0
+
+        # W2 weighted mean
+        if w2_flux_col in grp.columns:
+            f2 = pd.to_numeric(grp[w2_flux_col], errors='coerce').values
+            e2 = pd.to_numeric(grp[w2_err_col],  errors='coerce').values
+            valid2 = np.isfinite(f2) & np.isfinite(e2) & (e2 > 0) & (f2 > 0)
+            if valid2.sum() > 0:
+                w2 = 1.0 / e2[valid2] ** 2
+                row['w2_flux_mjy']           = float(np.sum(w2 * f2[valid2]) / np.sum(w2))
+                row['w2_flux_err_mjy']       = float(np.sqrt(1.0 / np.sum(w2)))
+                row['n_exp_w2']              = int(valid2.sum())
+                row['w2_intravisit_scatter'] = float(np.std(f2[valid2])) if valid2.sum() > 1 else 0.0
+
+        # Pass through other columns from first exposure
+        for col in ['cc_flags', 'qi_fact', 'moon_masked', 'saa_sep', 'qual_frame',
+                    'dataset', 'in_gap', 'w1_mag', 'w1_err', 'w2_mag', 'w2_err',
+                    'w1_minus_w2', 'w1_quality_ok', 'w2_quality_ok']:
+            if col in grp.columns:
+                row[col] = grp[col].iloc[0]
+
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# wise-M8: W3 color computation with paired masks
+# ---------------------------------------------------------------------------
+
+def compute_w1_w3_color(df):
+    """
+    Compute W1-W3 color using only epochs where BOTH bands are valid.
+
+    Never drop NaNs from one band without dropping from the other —
+    mismatched lengths produce nan W1-W3 even when valid pairs exist (wise-M8).
+
+    Returns
+    -------
+    w1w3_median : float or np.nan
+    n_paired : int
+    """
+    if 'w1mpro' not in df.columns or 'w3mpro' not in df.columns:
+        return np.nan, 0
+
+    w1 = pd.to_numeric(df['w1mpro'], errors='coerce').values
+    w3 = pd.to_numeric(df['w3mpro'], errors='coerce').values
+
+    # PAIRED mask — both must be finite (wise-M8 fix)
+    paired = np.isfinite(w1) & np.isfinite(w3)
+
+    if paired.sum() < 3:
+        return np.nan, int(paired.sum())
+
+    w1w3 = float(np.median(w1[paired] - w3[paired]))
+    return w1w3, int(paired.sum())
+
+
+# ---------------------------------------------------------------------------
 # Per-dataset IRSA queries
 # ---------------------------------------------------------------------------
 
 def _query_allsky(ra: float, dec: float,
                   radius_arcsec: float = WISE_NEOWISE_SEARCH_RADIUS_ARCSEC
                   ) -> pd.DataFrame:
-    """Query WISE AllSky single-exposure table."""
-    adql = _build_cone_adql(WISE_ALLSKY_TABLE, _EARLY_COLUMNS, ra, dec, radius_arcsec)
-    logger.debug(f"AllSky query: {adql[:120]}...")
-    return _irsa_tap_query(adql)
+    """Query WISE AllSky single-exposure table via safe schema helper (wise-H5)."""
+    required = WISE_TABLE_REQUIRED_COLS.get(WISE_ALLSKY_TABLE, [])
+    df, schema = _query_wise_table_safe(
+        WISE_ALLSKY_TABLE, ra, dec, radius_arcsec, _EARLY_COLUMNS
+    )
+    logger.debug(f"AllSky query: schema={schema}, rows={len(df)}")
+    if not df.empty and required:
+        _validate_table_schema(df, WISE_ALLSKY_TABLE, required)
+    return df
 
 
 def _query_3band(ra: float, dec: float,
                  radius_arcsec: float = WISE_NEOWISE_SEARCH_RADIUS_ARCSEC
                  ) -> pd.DataFrame:
-    """Query WISE 3-Band Cryo single-exposure table."""
-    adql = _build_cone_adql(WISE_3BAND_TABLE, _EARLY_COLUMNS, ra, dec, radius_arcsec)
-    logger.debug(f"3Band query: {adql[:120]}...")
-    return _irsa_tap_query(adql)
+    """Query WISE 3-Band Cryo single-exposure table via safe schema helper (wise-H5)."""
+    required = WISE_TABLE_REQUIRED_COLS.get(WISE_3BAND_TABLE, [])
+    df, schema = _query_wise_table_safe(
+        WISE_3BAND_TABLE, ra, dec, radius_arcsec, _EARLY_COLUMNS
+    )
+    logger.debug(f"3Band query: schema={schema}, rows={len(df)}")
+    if not df.empty and required:
+        _validate_table_schema(df, WISE_3BAND_TABLE, required)
+    return df
 
 
 def _query_postcryo(ra: float, dec: float,
                     radius_arcsec: float = WISE_NEOWISE_SEARCH_RADIUS_ARCSEC
                     ) -> pd.DataFrame:
-    """Query WISE Post-Cryo (2-band) single-exposure table."""
-    adql = _build_cone_adql(WISE_POSTCRYO_TABLE, _EARLY_COLUMNS, ra, dec, radius_arcsec)
-    logger.debug(f"PostCryo query: {adql[:120]}...")
-    return _irsa_tap_query(adql)
+    """Query WISE Post-Cryo (2-band) single-exposure table via safe schema helper (wise-H5)."""
+    required = WISE_TABLE_REQUIRED_COLS.get(WISE_POSTCRYO_TABLE, [])
+    df, schema = _query_wise_table_safe(
+        WISE_POSTCRYO_TABLE, ra, dec, radius_arcsec, _EARLY_COLUMNS
+    )
+    logger.debug(f"PostCryo query: schema={schema}, rows={len(df)}")
+    if not df.empty and required:
+        _validate_table_schema(df, WISE_POSTCRYO_TABLE, required)
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +852,12 @@ def _deduplicate(df: pd.DataFrame, window: float = _DEDUP_WINDOW_DAYS) -> pd.Dat
 
 def sigma_clip_in_flux_space(times, fluxes, flux_errors, sigma=4.0, maxiters=5):
     """
+    SUPERSEDED by sigma_clip_within_seasons() (FIX wise-C1).
+    Global flux-space sigma clip retained for reference only — DO NOT USE.
+    sigma_clip_within_seasons() clips within seasons, preserving cross-season
+    flux differences (the CLAGN signal). This global clip is scientifically
+    backwards for CLAGN detection — it can delete the bimodal flux distribution.
+
     Sigma clip light curves in FLUX SPACE only.
 
     NEVER sigma clip in magnitude space.
@@ -879,37 +1222,60 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
     in_gap_count = int(in_gap_mask.sum())
     combined = combined[~in_gap_mask].reset_index(drop=True)
 
-    # ---- Stage 0: Sigma clipping on W1 flux ----------------------------------
+    # ---- Stage 0: Within-season sigma clip (wise-C1) -------------------------
+    # REPLACED: global iterative MAD sigma clip (scientifically backwards for CLAGN).
+    # Global clip on bimodal CLAGN flux distribution can delete the bright or faint state.
+    # Within-season clip preserves cross-season flux differences (the CLAGN signal).
     n_before_clip = len(combined)
     if 'w1_flux_mjy' in combined.columns:
-        flux = pd.to_numeric(combined['w1_flux_mjy'], errors='coerce').values
-        ferr = pd.to_numeric(
-            combined.get('w1_flux_err_mjy', pd.Series(np.ones(len(combined)) * 0.01)),
-            errors='coerce'
-        ).values
+        times_mjd = pd.to_numeric(combined['mjd'], errors='coerce').values
+        flux_arr  = pd.to_numeric(combined['w1_flux_mjy'], errors='coerce').values
+        ferr_col  = combined.get('w1_flux_err_mjy',
+                                  pd.Series(np.ones(len(combined)) * 0.01, index=combined.index))
+        ferr_arr  = pd.to_numeric(ferr_col, errors='coerce').values
 
-        valid = np.isfinite(flux) & np.isfinite(ferr) & (ferr > 0)
-        keep = valid.copy()
+        # Assign season IDs first (1D ndarray — cluster_epochs_into_seasons returns ndarray)
+        season_id = cluster_epochs_into_seasons(times_mjd)
 
-        for _ in range(SIGMA_CLIP_ITERS):
-            if keep.sum() < 5:
-                break
-            med = np.nanmedian(flux[keep])
-            mad = np.nanmedian(np.abs(flux[keep] - med))
-            sigma_mad = 1.4826 * mad
-            if sigma_mad <= 0:
-                break
-            keep &= np.abs(flux - med) < SIGMA_CLIP_SIGMA * sigma_mad
-
-        combined = combined[keep].reset_index(drop=True)
+        # Within-season clip only — never clip across seasons
+        keep_clip, clip_reasons = sigma_clip_within_seasons(
+            times_mjd, flux_arr, ferr_arr,
+            season_id=season_id,
+            sigma_thresh=SIGMA_CLIP_SIGMA   # from config, should be 4.0
+        )
+        combined = combined[keep_clip].reset_index(drop=True)
+        season_id = season_id[keep_clip]    # keep season_id aligned
+    else:
+        season_id = cluster_epochs_into_seasons(
+            pd.to_numeric(combined['mjd'], errors='coerce').values
+        )
     n_sigma_clipped = n_before_clip - len(combined)
+    logger.info(
+        f"{source_id}: Within-season clip removed {n_sigma_clipped} epochs "
+        f"(sigma_thresh={SIGMA_CLIP_SIGMA})"
+    )
 
-    # ---- Deduplicate -----------------------------------------------------------
-    combined = _deduplicate(combined)
+    # ---- Visit aggregation (wise-C2) ------------------------------------------
+    # REPLACED: _deduplicate() which kept only the best-SNR single exposure.
+    # aggregate_to_visits() computes the inverse-variance weighted mean per visit,
+    # preserving all information and correctly propagating uncertainties.
+    len_before_agg = len(combined)
+    combined = aggregate_to_visits(combined, max_visit_gap_days=0.5)
+    logger.info(
+        f"{source_id}: Aggregated {len_before_agg} exposures into "
+        f"{len(combined)} visits"
+    )
 
     if combined.empty:
         _empty['rejection_reason'] = 'No epochs remain after quality filtering'
         return _empty
+
+    # ---- wise-M9: Assign gap-based season IDs to combined DataFrame -----------
+    # cluster_epochs_into_seasons is called at ingestion, not just at analysis time.
+    # This ensures season_id is available for all downstream operations.
+    combined['season_id'] = cluster_epochs_into_seasons(
+        combined['mjd'].values
+    )
 
     # ---- Per-dataset counts ---------------------------------------------------
     n_by_dataset = combined['dataset'].value_counts().to_dict() if 'dataset' in combined.columns else {}
