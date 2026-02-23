@@ -10,23 +10,22 @@ import numpy as np
 
 from ..config import (
     GAIA_SEARCH_RADIUS_ARCSEC, GAIA_MAIN_TABLE, GAIA_COLUMNS,
+    GAIA_COLUMNS_WITH_PARALLAX,
     MAX_PROPER_MOTION_SIG, MAX_RUWE,
-)
-
-# GAIA query columns including parallax (FLAW A6)
-_GAIA_COLUMNS_WITH_PARALLAX = (
-    "source_id, ra, dec, pmra, pmra_error, pmdec, pmdec_error, "
-    "parallax, parallax_error, "
-    "ruwe, astrometric_excess_noise, astrometric_excess_noise_sig, "
-    "phot_g_mean_mag, phot_g_mean_flux_over_error, "
-    "phot_variable_flag, non_single_star, "
-    "classprob_dsc_combmod_quasar, classprob_dsc_combmod_galaxy"
 )
 
 logger = logging.getLogger(__name__)
 
 # Suppress the ESA authentication warning at import time
 warnings.filterwarnings('ignore', message='.*passwords of all user accounts.*')
+
+
+def _fmt(x, spec=".2f"):
+    """NaN-safe log formatting helper (Fix #21). Returns 'nan' for non-finite or bad types."""
+    try:
+        return format(float(x), spec) if np.isfinite(float(x)) else "nan"
+    except (TypeError, ValueError):
+        return "nan"
 
 
 def _null_gaia_result():
@@ -45,10 +44,17 @@ def _null_gaia_result():
         'gaia_variability_score': 0.0,
         'classprob_quasar': np.nan,
         'classprob_galaxy': np.nan,
-        # FLAW A6: parallax fields
+        # parallax fields
         'parallax': np.nan,
         'parallax_error': np.nan,
         'gaia_parallax_sig': np.nan,
+        # Fix #8: diagnostic fields
+        'gaia_is_foreground_star': None,
+        'gaia_rejection_reasons': None,
+        'gaia_quality_flag': None,
+        'gaia_quasar_class': None,
+        'gaia_ang_sep_arcsec': np.nan,
+        'gaia_match_method': None,
     }
 
 
@@ -77,15 +83,16 @@ def query_gaia_dr3(ra, dec, source_id):
 
     radius_deg = GAIA_SEARCH_RADIUS_ARCSEC / 3600.0
 
-    # FLAW A6: Use columns including parallax
+    # Fix #6: Order by angular separation (nearest first), not by SNR
     query = (
-        f"SELECT TOP 5 {_GAIA_COLUMNS_WITH_PARALLAX} "
+        f"SELECT TOP 5 {GAIA_COLUMNS_WITH_PARALLAX}, "
+        f"DISTANCE(POINT('ICRS', ra, dec), POINT('ICRS', {ra:.6f}, {dec:.6f})) AS ang_sep_deg "
         f"FROM {GAIA_MAIN_TABLE} "
         f"WHERE CONTAINS("
         f"  POINT('ICRS', ra, dec),"
         f"  CIRCLE('ICRS', {ra:.6f}, {dec:.6f}, {radius_deg:.8f})"
         f") = 1 "
-        f"ORDER BY phot_g_mean_flux_over_error DESC"
+        f"ORDER BY ang_sep_deg ASC"
     )
 
     try:
@@ -103,8 +110,18 @@ def query_gaia_dr3(ra, dec, source_id):
                      f"{GAIA_SEARCH_RADIUS_ARCSEC}\"")
         return _null_gaia_result()
 
-    # Take the best match (already sorted by SNR DESC)
+    # Fix #6: Take nearest match (sorted by ang_sep_deg ASC)
     row = tbl[0]
+
+    # Reject if nearest source exceeds match threshold
+    MAX_MATCH_ARCSEC = 1.0
+    ang_sep_arcsec = float(row['ang_sep_deg']) * 3600.0
+    if ang_sep_arcsec > MAX_MATCH_ARCSEC:
+        logger.debug(
+            f"{source_id}: Nearest GAIA source at {ang_sep_arcsec:.2f}\" "
+            f"exceeds {MAX_MATCH_ARCSEC}\" threshold — no match"
+        )
+        return _null_gaia_result()
 
     def _safe_float(col):
         val = row[col]
@@ -165,12 +182,19 @@ def query_gaia_dr3(ra, dec, source_id):
     gaia_var_score = 1.0 if phot_var_flag == 'VARIABLE' else 0.0
 
     # ---- Quasar probability advisory check ----------------------------------
-    check_gaia_quasar_classification(classprob_quasar, source_id)
+    quasar_class = check_gaia_quasar_classification(classprob_quasar, source_id)
+
+    # ---- Foreground star check (Fix #8) -------------------------------------
+    is_star, star_reasons = is_foreground_star({
+        'pm_sig': pm_sig,
+        'gaia_parallax_sig': float(plx_sig) if np.isfinite(plx_sig) else np.nan,
+        'ruwe': ruwe,
+    })
 
     logger.debug(
-        f"{source_id}: GAIA match | RUWE={ruwe:.2f} | "
-        f"pm_sig={pm_sig:.1f}{'(unknown)' if gaia_pm_unknown else ''} | "
-        f"variable={phot_var_flag}"
+        f"{source_id}: GAIA match | RUWE={_fmt(ruwe)} | "
+        f"pm_sig={_fmt(pm_sig, '.1f')}{'(unknown)' if gaia_pm_unknown else ''} | "
+        f"variable={phot_var_flag} | ang_sep={_fmt(ang_sep_arcsec)}\""
     )
 
     return {
@@ -187,10 +211,17 @@ def query_gaia_dr3(ra, dec, source_id):
         'gaia_variability_score': gaia_var_score,
         'classprob_quasar': classprob_quasar,
         'classprob_galaxy': classprob_galaxy,
-        # FLAW A6: parallax for foreground star rejection
+        # parallax for foreground star rejection
         'parallax': parallax,
         'parallax_error': parallax_error,
         'gaia_parallax_sig': float(plx_sig) if np.isfinite(plx_sig) else np.nan,
+        # Fix #8: diagnostic fields
+        'gaia_is_foreground_star': is_star,
+        'gaia_rejection_reasons': ', '.join(star_reasons) if star_reasons else None,
+        'gaia_quality_flag': ruwe_quality_flag,
+        'gaia_quasar_class': quasar_class,
+        'gaia_ang_sep_arcsec': float(ang_sep_arcsec),
+        'gaia_match_method': 'nearest_within_1arcsec',
     }
 
 
@@ -327,11 +358,19 @@ def check_gaia_quasar_classification(classprob_quasar, source_id=''):
     classprob_quasar > 0.5: strong independent AGN confirmation.
     classprob_quasar < 0.1: potentially misclassified — advisory warning only.
     This is advisory only — do not reject based on this alone.
+
+    Returns
+    -------
+    str: one of 'strong_quasar_support', 'neutral', 'low_quasar_prob', 'unknown'
     """
     if not np.isfinite(classprob_quasar):
-        return  # No classification available
+        return 'unknown'
+    if classprob_quasar > 0.5:
+        return 'strong_quasar_support'
     if classprob_quasar < 0.1:
         logger.debug(
             f"{source_id}: Low GAIA quasar probability = {classprob_quasar:.3f} "
             f"(possible misclassification — advisory warning only)"
         )
+        return 'low_quasar_prob'
+    return 'neutral'

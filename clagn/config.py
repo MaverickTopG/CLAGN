@@ -362,6 +362,18 @@ GAIA_COLUMNS = (
     "classprob_dsc_combmod_quasar, classprob_dsc_combmod_galaxy"
 )
 
+# Fix #7 + #20: Canonical GAIA column list including parallax.
+# Used in query_gaia_dr3(); DISTANCE() is appended inline in the query.
+GAIA_COLUMNS_WITH_PARALLAX = (
+    "source_id, ra, dec, "
+    "parallax, parallax_error, "
+    "pmra, pmra_error, pmdec, pmdec_error, "
+    "ruwe, phot_g_mean_mag, phot_g_mean_flux_over_error, "
+    "astrometric_excess_noise, astrometric_excess_noise_sig, "
+    "phot_variable_flag, "
+    "classprob_dsc_combmod_quasar, classprob_dsc_combmod_galaxy"
+)
+
 # ---------------------------------------------------------------------------
 # Host galaxy contamination threshold
 # ---------------------------------------------------------------------------
@@ -464,4 +476,53 @@ SCORE_WEIGHTS_V2 = {
     'gaia_variability':     1.5,   # upgraded weight
     'drw_sigma_excess':     1.0,
 }
-MAX_SCORE_V2 = 20.0  # sum of v2 weights
+MAX_SCORE_V2 = sum(SCORE_WEIGHTS_V2.values())  # Fix #24: computed, not hardcoded
+
+# ---------------------------------------------------------------------------
+# Expansion 7: Score v3 group weights (score-M12)
+# ---------------------------------------------------------------------------
+SCORE_GROUP_WEIGHTS_V3 = {
+    'amplitude':   3.0,
+    'temporal':    3.0,
+    'color':       2.0,
+    'statistical': 1.5,
+    'astrometric': 0.5,
+}
+
+# DRW sign-check strictness: if True, raise on inconsistency; if False, log warning
+DRW_STRICT_SIGN_CHECK = False
+
+
+# ---------------------------------------------------------------------------
+# Fix #18: Delta-mag / flux-ratio helpers (sign convention enforced)
+# ---------------------------------------------------------------------------
+
+def delta_mag_from_flux_ratio(flux_ratio):
+    """Return delta_mag = +2.5 * log10(flux_ratio). flux_ratio > 0 required."""
+    assert flux_ratio > 0
+    return 2.5 * np.log10(flux_ratio)
+
+
+def flux_ratio_from_delta_mag(delta_mag):
+    """Return flux_ratio = 10^(delta_mag / 2.5)."""
+    return 10.0 ** (delta_mag / 2.5)
+
+
+def delta_mag_from_fluxes(F_early, F_late):
+    """Return delta_mag = +2.5 * log10(F_late / F_early). Both fluxes > 0 required."""
+    assert F_early > 0 and F_late > 0
+    return delta_mag_from_flux_ratio(F_late / F_early)
+
+
+# ---------------------------------------------------------------------------
+# Fix #22: Source ID type convention helpers
+# ---------------------------------------------------------------------------
+
+def normalize_source_id(sid):
+    """Always return string. Use for all internal dict keys and CSV values."""
+    return str(sid).strip()
+
+
+def normalize_gaia_id(gaia_sid):
+    """Always return int. Use when passing to GAIA queries."""
+    return int(gaia_sid)

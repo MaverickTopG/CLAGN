@@ -22,11 +22,11 @@ from ..config import (
     DRW_MAX_EPOCHS_FOR_FULL_FIT,
 )
 
-# FLAW A5: Bounds constants for celerite2 optimization (must match numpy fallback)
-LOG_TAU_MIN = np.log(2.0)       # tau_min = 2 days
-LOG_TAU_MAX = np.log(5000.0)    # tau_max = 5000 days
-LOG_SIG_MIN = np.log(1e-4)      # sigma_min = 0.0001 mJy
-LOG_SIG_MAX = np.log(1e4)       # sigma_max = 10000 mJy
+# drw-H5: Bounds constants aliased from config (must match numpy fallback)
+LOG_TAU_MIN = DRW_LOG_TAU_MIN
+LOG_TAU_MAX = DRW_LOG_TAU_MAX
+LOG_SIG_MIN = DRW_LOG_SIGMA_MIN
+LOG_SIG_MAX = DRW_LOG_SIGMA_MAX
 # Convert to rho-space: rho ≈ 2π*tau for SHOTerm Q=0.5
 LOG_RHO_MIN = LOG_TAU_MIN + np.log(2 * np.pi)
 LOG_RHO_MAX = LOG_TAU_MAX + np.log(2 * np.pi)
@@ -38,7 +38,9 @@ def _maybe_subsample(times, fluxes, flux_errors, max_n=DRW_MAX_EPOCHS_FOR_FULL_F
                      seed=42):
     """
     Subsample light curve to at most `max_n` epochs for O(N³) matrix operations.
-    Uses a uniform random subsample preserving temporal coverage.
+
+    drw-M8: Stratified subsampling — half from evenly-spaced indices (preserving
+    temporal coverage), half from random choice of the remainder.
 
     Returns (t_sub, f_sub, e_sub, original_indices)
     """
@@ -46,9 +48,34 @@ def _maybe_subsample(times, fluxes, flux_errors, max_n=DRW_MAX_EPOCHS_FOR_FULL_F
         return times, fluxes, flux_errors, np.arange(len(times))
 
     rng = np.random.default_rng(seed=seed)
-    idx = np.sort(rng.choice(len(times), size=max_n, replace=False))
-    logger.debug(f"DRW: subsampling {len(times)} → {max_n} epochs for matrix fit")
-    return times[idx], fluxes[idx], flux_errors[idx], idx
+    n = len(times)
+
+    # Sort by time first
+    sort_idx = np.argsort(times)
+    t_sorted = times[sort_idx]
+    f_sorted = fluxes[sort_idx]
+    e_sorted = flux_errors[sort_idx]
+
+    # Stratified half: evenly spaced across the sorted array
+    n_strat = max_n // 2
+    strat_positions = np.linspace(0, n - 1, n_strat).astype(int)
+    strat_positions = np.unique(strat_positions)  # Remove duplicates if any
+
+    # Random half: from the non-stratified indices
+    all_indices = np.arange(n)
+    non_strat = np.setdiff1d(all_indices, strat_positions)
+    n_random = max_n - len(strat_positions)
+    if n_random > 0 and len(non_strat) > 0:
+        rand_idx = rng.choice(non_strat, size=min(n_random, len(non_strat)), replace=False)
+    else:
+        rand_idx = np.array([], dtype=int)
+
+    chosen = np.sort(np.concatenate([strat_positions, rand_idx]))
+    logger.debug("DRW: stratified subsampling %d → %d epochs for matrix fit", n, len(chosen))
+
+    # Map back to original (unsorted) indices
+    original_indices = sort_idx[chosen]
+    return t_sorted[chosen], f_sorted[chosen], e_sorted[chosen], original_indices
 
 
 def _drw_nll(log_sigma, log_tau, times, fluxes, flux_errors):
@@ -148,11 +175,15 @@ def _fit_drw_numpy(times, fluxes, flux_errors):
     """
     t_s, f_s, e_s, _ = _maybe_subsample(times, fluxes, flux_errors)
 
-    # ---- Grid initialization ------------------------------------------------
+    # ---- Grid initialization (drw-H4: use config bounds, inner 80%) ---------
     best_nll = np.inf
     best_p0 = None
-    for log_sigma0 in np.linspace(-2.0, 2.0, 4):
-        for log_tau0 in np.linspace(4.0, 7.0, 4):
+    inner_sigma_min = DRW_LOG_SIGMA_MIN + 0.1 * (DRW_LOG_SIGMA_MAX - DRW_LOG_SIGMA_MIN)
+    inner_sigma_max = DRW_LOG_SIGMA_MAX - 0.1 * (DRW_LOG_SIGMA_MAX - DRW_LOG_SIGMA_MIN)
+    inner_tau_min   = DRW_LOG_TAU_MIN   + 0.1 * (DRW_LOG_TAU_MAX   - DRW_LOG_TAU_MIN)
+    inner_tau_max   = DRW_LOG_TAU_MAX   - 0.1 * (DRW_LOG_TAU_MAX   - DRW_LOG_TAU_MIN)
+    for log_sigma0 in np.linspace(inner_sigma_min, inner_sigma_max, 4):
+        for log_tau0 in np.linspace(inner_tau_min, inner_tau_max, 4):
             nll = _drw_nll(log_sigma0, log_tau0, t_s, f_s, e_s)
             if nll < best_nll:
                 best_nll = nll
@@ -297,12 +328,41 @@ def fit_drw_map(times, fluxes, flux_errors, z=0.0):
     fluxes = np.asarray(fluxes, dtype=float)
     flux_errors = np.asarray(flux_errors, dtype=float)
 
-    # FIX 3: Sanity check — input must be in flux space (mJy range)
+    # drw-C3: Input cleaning — NaN/invalid filter, sort by time, jitter near-duplicates
+    valid_mask = (np.isfinite(times) & np.isfinite(fluxes) & np.isfinite(flux_errors)
+                  & (fluxes > 0) & (flux_errors > 0))
+    times = times[valid_mask]
+    fluxes = fluxes[valid_mask]
+    flux_errors = flux_errors[valid_mask]
+
+    if len(times) < 6:
+        return {
+            'valid': False,
+            'unreliable_reason': f'insufficient_epochs({len(times)}<6)',
+            'tau_rest_days': np.nan,
+            'sigma_drw': np.nan,
+        }
+
+    # Sort by time
+    sort_idx = np.argsort(times)
+    times = times[sort_idx]
+    fluxes = fluxes[sort_idx]
+    flux_errors = flux_errors[sort_idx]
+
+    # Jitter near-duplicate times (within 0.01 days) to avoid singular covariance
+    dt = np.diff(times)
+    near_dup = np.where(dt < 0.01)[0] + 1
+    if len(near_dup) > 0:
+        rng_jitter = np.random.default_rng(seed=99)
+        times[near_dup] += rng_jitter.uniform(0.01, 0.1, size=len(near_dup))
+
+    # drw-H6: ValueError instead of assert for mJy range check
     median_val = float(np.nanmedian(fluxes))
-    assert 0.001 < median_val < 100000, (
-        f"Median flux {median_val:.3f} is outside mJy range [0.001, 100000]. "
-        f"Did you accidentally pass magnitudes instead of fluxes?"
-    )
+    if not (0.001 < median_val < 100000):
+        raise ValueError(
+            f"Median flux {median_val:.3f} is outside mJy range [0.001, 100000]. "
+            f"Did you accidentally pass magnitudes instead of fluxes?"
+        )
 
     # ---- Rest-frame time correction (Ricci+2022; mandatory) -----------------
     times_rest = times / (1.0 + max(z, 0.0))
@@ -465,9 +525,15 @@ def fit_drw_mcmc(times, fluxes, flux_errors, z=0.0,
     # Subsample for MCMC speed
     t_s, f_s, e_s, _ = _maybe_subsample(times_rest, fluxes, flux_errors)
 
+    # drw-C1: Mean subtraction — must subtract weighted mean before MCMC
+    # to prevent DC offset from being misattributed to stochastic variability
+    weights_s = 1.0 / np.maximum(e_s ** 2, 1e-30)
+    mu_flux = float(np.average(f_s, weights=weights_s))
+    f_s_centered = f_s - mu_flux
+
     def log_prob(params):
         log_sigma, log_tau = params
-        nll = _drw_nll(log_sigma, log_tau, t_s, f_s, e_s)
+        nll = _drw_nll(log_sigma, log_tau, t_s, f_s_centered, e_s)
         if nll >= 1e9:
             return -np.inf
         return -nll  # log-likelihood (uniform prior in log-space)
@@ -495,6 +561,33 @@ def fit_drw_mcmc(times, fluxes, flux_errors, z=0.0,
     sampler = emcee.EnsembleSampler(n_walkers, 2, log_prob)
     sampler.run_mcmc(p0, n_steps, progress=False)
 
+    # drw-H7: Health checks
+    mcmc_warning = []
+    acceptance_frac_raw = float(np.mean(sampler.acceptance_fraction))
+    if acceptance_frac_raw < 0.1 or acceptance_frac_raw > 0.7:
+        mcmc_warning.append(f'acceptance_fraction={acceptance_frac_raw:.3f} outside [0.1,0.7]')
+
+    # Boundary pile-up check for tau
+    full_chain = sampler.get_chain(flat=True)
+    log_tau_all = full_chain[:, 1]
+    frac_near_lower = float(np.mean(log_tau_all < DRW_LOG_TAU_MIN + 0.5))
+    frac_near_upper = float(np.mean(log_tau_all > DRW_LOG_TAU_MAX - 0.5))
+    if frac_near_lower > 0.3:
+        mcmc_warning.append(f'tau_pileup_lower_bound(frac={frac_near_lower:.2f})')
+    if frac_near_upper > 0.3:
+        mcmc_warning.append(f'tau_pileup_upper_bound(frac={frac_near_upper:.2f})')
+
+    # Autocorrelation ESS check
+    mcmc_n_effective = np.nan
+    try:
+        autocorr = sampler.get_autocorr_time(quiet=True)
+        n_flat = n_walkers * (n_steps - n_burn)
+        mcmc_n_effective = float(np.min(n_flat / (2.0 * autocorr + 1.0)))
+        if mcmc_n_effective < 50:
+            mcmc_warning.append(f'low_effective_samples(N_eff={mcmc_n_effective:.0f})')
+    except Exception:
+        pass
+
     # Discard burn-in, flatten chain
     chain = sampler.get_chain(discard=n_burn, flat=True)   # shape (n_flat, 2)
 
@@ -513,7 +606,8 @@ def fit_drw_mcmc(times, fluxes, flux_errors, z=0.0,
 
     tau_median = float(np.median(tau_samples))
     sigma_median = float(np.median(sigma_samples))
-    baseline_obs_days = float(np.asarray(times, dtype=float).ptp())
+    _times_arr = np.asarray(times, dtype=float)
+    baseline_obs_days = float(_times_arr.max() - _times_arr.min())
 
     # FIX 5: Reliability check
     tau_reliable, unreliable_reason = check_drw_reliability(
@@ -539,6 +633,13 @@ def fit_drw_mcmc(times, fluxes, flux_errors, z=0.0,
         'acceptance_fraction': acceptance_fraction,
         'tau_reliable':   tau_reliable,
         'unreliable_reason': unreliable_reason if not tau_reliable else None,
+        # drw-C1: mean subtraction keys
+        'mcmc_centered_flux': True,
+        'mu_flux_mjy':        mu_flux,
+        # drw-H7: health check keys
+        'mcmc_warning':            '; '.join(mcmc_warning) if mcmc_warning else None,
+        'mcmc_n_effective':        float(mcmc_n_effective) if np.isfinite(mcmc_n_effective) else np.nan,
+        'mcmc_acceptance_fraction': acceptance_frac_raw,
     }
 
 
@@ -591,7 +692,8 @@ def compute_drw_nonstationarity(times, fluxes, flux_errors, z, tau, sigma_drw):
     late_mask  = times > mjd_mid
 
     if early_mask.sum() < 3 or late_mask.sum() < 3:
-        return np.nan, np.nan, np.nan, np.nan
+        return {'nonstationarity_sigma': np.nan, 'delta_mean_normalized': np.nan,
+                'mean_early_mjy': np.nan, 'mean_late_mjy': np.nan, 'valid': False}
 
     # ---- Use rolling 90-day medians for robustness -------------------------
     from ..utils.photometry import rolling_median_flux
@@ -613,23 +715,34 @@ def compute_drw_nonstationarity(times, fluxes, flux_errors, z, tau, sigma_drw):
 
     # Correlation between epoch means: DRW variance at lag T_half
     drw_var_at_lag = sigma_drw**2 * (1.0 - np.exp(-abs(T_half) / max(tau, 1.0)))
-    # Standard error of the half-mean (assuming tau >> cadence for conservative bound)
-    sigma_expected = sigma_drw * np.sqrt(2.0 / N_half)
-    # Correction for within-segment correlations: multiply by sqrt(var_at_lag/sigma²)
-    corr_factor = np.sqrt(max(drw_var_at_lag / sigma_drw**2, 0.01))
-    sigma_expected *= (1.0 + corr_factor)
+
+    # drw-M10: Add measurement uncertainty in quadrature
+    sigma_drw_expected = sigma_drw * np.sqrt(2.0 / N_half) * (
+        1.0 + np.sqrt(max(drw_var_at_lag / (sigma_drw**2 + 1e-30), 0.01))
+    )
+    sigma_meas = np.sqrt(
+        np.nanmean(flux_errors[early_mask]**2) / max(early_mask.sum(), 1) +
+        np.nanmean(flux_errors[late_mask]**2)  / max(late_mask.sum(),  1)
+    )
+    sigma_expected = float(np.sqrt(sigma_drw_expected**2 + sigma_meas**2))
 
     if sigma_expected <= 0:
-        return np.nan, np.nan, early_median, late_median
+        return {'nonstationarity_sigma': np.nan, 'delta_mean_normalized': np.nan,
+                'mean_early_mjy': float(early_median), 'mean_late_mjy': float(late_median),
+                'valid': False}
 
     nonstationarity_sigma = abs(delta_mean) / sigma_expected
     delta_mean_normalized = delta_mean / sigma_expected
 
     logger.debug(
-        f"DRW nonstationarity: Δμ={delta_mean:.4f} mJy, "
-        f"σ_expected={sigma_expected:.4f} mJy, "
-        f"nonstationarity={nonstationarity_sigma:.2f}σ"
+        "DRW nonstationarity: Δμ=%.4f mJy, σ_expected=%.4f mJy, nonstationarity=%.2fσ",
+        delta_mean, sigma_expected, nonstationarity_sigma
     )
 
-    return (float(nonstationarity_sigma), float(delta_mean_normalized),
-            float(early_median), float(late_median))
+    return {
+        'nonstationarity_sigma': float(nonstationarity_sigma),
+        'delta_mean_normalized': float(delta_mean_normalized),
+        'mean_early_mjy':        float(early_median),
+        'mean_late_mjy':         float(late_median),
+        'valid':                 True,
+    }

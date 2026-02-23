@@ -246,9 +246,8 @@ def _quick_score(times: np.ndarray, fluxes: np.ndarray, errors: np.ndarray,
         drw_result = fit_drw_map(times, fluxes, errors, z=z)
         tau = drw_result.get('tau_rest_days', 300.0)
         sigma = drw_result.get('sigma_drw', F_med * 0.1)
-        ns_sigma, _, _, _ = compute_drw_nonstationarity(
-            times, fluxes, errors, z, tau, sigma
-        )
+        ns_result = compute_drw_nonstationarity(times, fluxes, errors, z, tau, sigma)
+        ns_sigma = ns_result.get('nonstationarity_sigma', 0.0)
         score_drw = min(1.0, max(0.0, float(ns_sigma or 0.0) / 5.0))
     except Exception:
         score_drw = 0.5 * (score_delta + score_nonstat)

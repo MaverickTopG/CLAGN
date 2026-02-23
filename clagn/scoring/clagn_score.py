@@ -25,6 +25,7 @@ from ..config import (
     SIGMA_EXCESS_NORM_FLUX_MJY, SIGMA_EXCESS_LUM_SLOPE,
     MIN_MAG_CHANGE_W1,
     WISE_SEASON_ANCHOR_MJD,
+    SCORE_GROUP_WEIGHTS_V3,
 )
 from ..utils.crossmatch import galactic_latitude
 from ..models.variability import compute_delta_mag_correct, compute_delta_mag_w2
@@ -52,10 +53,10 @@ def _norm_drw_nonstat(sigma):
     return float(np.clip(_safe(sigma) / 10.0, 0.0, 1.0))
 
 
-def _norm_delta_mag(frac_change):
+def _norm_frac_flux_change(frac_change):
     """
-    Fractional flux change: |flux_early - flux_late| / flux_mean.
-    A factor-2 change → frac_change ~ 1.0. Normalized by dividing by 2.
+    Normalized fractional flux change: input is |flux_ratio - 1| (not magnitude delta).
+    A factor-2 change → flux_ratio=2 → frac_change=1.0. Normalized by dividing by 2.
     """
     return float(np.clip(_safe(frac_change) / 2.0, 0.0, 1.0))
 
@@ -89,14 +90,12 @@ def _norm_gaia_var(variable_flag):
 # DRW sigma excess vs luminosity expectation (Vanden Berk+2004)
 # ---------------------------------------------------------------------------
 
-def _compute_sigma_excess(sigma_drw_obs, w1_flux_mean_mjy):
+def _compute_flux_variability_excess(sigma_drw_obs, w1_flux_mean_mjy):
     """
-    Compute DRW amplitude excess vs the luminosity-variability anti-correlation.
+    Compute DRW flux variability amplitude excess vs the luminosity-variability
+    anti-correlation (Vanden Berk+2004). sigma_expected ∝ L^(-0.5).
 
-    AGN variability anti-correlates with luminosity (Vanden Berk+2004).
-    sigma_expected ∝ L^(-0.5)
-
-    sigma_excess = sigma_drw_obs / sigma_expected
+    flux_variability_excess = sigma_drw_obs / sigma_expected
 
     Parameters
     ----------
@@ -105,7 +104,7 @@ def _compute_sigma_excess(sigma_drw_obs, w1_flux_mean_mjy):
 
     Returns
     -------
-    sigma_excess : float (> 1 = more variable than expected)
+    flux_variability_excess : float (> 1 = more variable than expected)
     """
     if not (np.isfinite(sigma_drw_obs) and sigma_drw_obs > 0 and
             np.isfinite(w1_flux_mean_mjy) and w1_flux_mean_mjy > 0):
@@ -183,8 +182,13 @@ def correct_delta_mag_for_host(delta_mag_observed, f_agn):
     if not (np.isfinite(delta_mag_observed) and 0 < f_agn <= 1):
         return delta_mag_observed
 
+    # score-H6: Don't correct when AGN fraction < 20% — correction unreliable
+    if f_agn < 0.20:
+        return delta_mag_observed
+
     flux_ratio_total = 10.0 ** (delta_mag_observed / 2.5)
     flux_ratio_agn = 1.0 + (flux_ratio_total - 1.0) / f_agn
+    flux_ratio_agn = float(np.clip(flux_ratio_agn, 0.01, 100.0))
 
     if flux_ratio_agn <= 0:
         return delta_mag_observed
@@ -227,19 +231,23 @@ def _compute_delta_mag_seasonal(wise_result, z=0.1):
     if w1_err is None:
         w1_err = np.where(np.isfinite(w1_flux), w1_flux * 0.05, np.nan)
 
-    # FIX 1: Use seasonal median flux method
-    delta_mag_w1, _, flux_ratio_w1 = compute_delta_mag_correct(
-        mjd, w1_flux, w1_err, z=z
-    )
+    # FIX 1: Use seasonal median flux method (dict return)
+    dm_result_w1 = compute_delta_mag_correct(mjd, w1_flux, w1_err, z=z)
+    if dm_result_w1 is not None:
+        delta_mag_w1 = dm_result_w1['delta_mag']
+        flux_ratio_w1 = dm_result_w1['flux_ratio']
+    else:
+        delta_mag_w1 = None
+        flux_ratio_w1 = None
 
     # W2
     delta_mag_w2 = 0.0
     if w2_flux is not None:
         if w2_err is None:
             w2_err = np.where(np.isfinite(w2_flux), w2_flux * 0.05, np.nan)
-        dm_w2, _, _ = compute_delta_mag_w2(mjd, w2_flux, w2_err, z=z)
-        if dm_w2 is not None:
-            delta_mag_w2 = float(dm_w2)
+        dm_result_w2 = compute_delta_mag_w2(mjd, w2_flux, w2_err, z=z)
+        if dm_result_w2 is not None:
+            delta_mag_w2 = float(dm_result_w2['delta_mag'])
 
     if delta_mag_w1 is None:
         delta_mag_w1 = 0.0
@@ -355,30 +363,47 @@ def check_w1_w2_coherence(times, w1_flux, w2_flux, w1_err=None, w2_err=None):
     if not np.isfinite(pearson_r):
         pearson_r = 0.0
 
-    # Same-direction change
+    # Same-direction change (score-H7: indeterminate when changes too flat)
     seasons_sorted = sorted(common_seasons)
     if len(seasons_sorted) >= 4:
         f1_early = np.mean([w1_season[s] for s in seasons_sorted[:2]])
-        f1_late = np.mean([w1_season[s] for s in seasons_sorted[-2:]])
+        f1_late  = np.mean([w1_season[s] for s in seasons_sorted[-2:]])
         f2_early = np.mean([w2_season[s] for s in seasons_sorted[:2]])
-        f2_late = np.mean([w2_season[s] for s in seasons_sorted[-2:]])
-        same_direction = (np.sign(f1_late - f1_early) == np.sign(f2_late - f2_early))
+        f2_late  = np.mean([w2_season[s] for s in seasons_sorted[-2:]])
+        delta_w1 = f1_late - f1_early
+        delta_w2 = f2_late - f2_early
+        thresh1 = 0.02 * (abs(f1_early) + abs(f1_late)) / 2
+        thresh2 = 0.02 * (abs(f2_early) + abs(f2_late)) / 2
+        if abs(delta_w1) < thresh1 or abs(delta_w2) < thresh2:
+            same_direction = None   # Indeterminate — too flat to measure direction
+        else:
+            same_direction = bool(np.sign(delta_w1) == np.sign(delta_w2))
     else:
-        same_direction = (np.sign(w1_vals[-1] - w1_vals[0]) ==
-                          np.sign(w2_vals[-1] - w2_vals[0]))
+        d1 = w1_vals[-1] - w1_vals[0]
+        d2 = w2_vals[-1] - w2_vals[0]
+        same_direction = bool(np.sign(d1) == np.sign(d2))
 
     # Coherence score: combines weighted Pearson r and same-direction bonus
-    coherence_score = max(0.0, pearson_r) * (1.0 if same_direction else 0.5)
+    # same_direction=None → neutral factor 0.75
+    if same_direction is None:
+        direction_factor = 0.75
+    elif same_direction:
+        direction_factor = 1.0
+    else:
+        direction_factor = 0.5
+    coherence_score = max(0.0, pearson_r) * direction_factor
     coherence_score = float(np.clip(coherence_score, 0.0, 1.0))
 
-    if pearson_r > 0.6 and same_direction:
+    if pearson_r > 0.6 and same_direction is True:
         coherence_flag = 'coherent'
+    elif pearson_r > 0.6 and same_direction is None:
+        coherence_flag = 'marginal'
     elif pearson_r > 0.3:
         coherence_flag = 'marginal'
     else:
         coherence_flag = 'incoherent'
 
-    return coherence_score, pearson_r, bool(same_direction), coherence_flag
+    return coherence_score, pearson_r, same_direction, coherence_flag
 
 
 # ---------------------------------------------------------------------------
@@ -440,8 +465,14 @@ def compute_composite_score_v3(components):
     )
     E_score = _safe(components.get('gaia_variable', 0))
 
-    w_A, w_B, w_C, w_D, w_E = 3.0, 3.0, 2.0, 1.5, 0.5
-    total_w = w_A + w_B + w_C + w_D + w_E
+    # score-M12: Use weights from config (SCORE_GROUP_WEIGHTS_V3)
+    w = SCORE_GROUP_WEIGHTS_V3
+    w_A = w['amplitude']
+    w_B = w['temporal']
+    w_C = w['color']
+    w_D = w['statistical']
+    w_E = w['astrometric']
+    total_w = sum(w.values())
 
     composite = (w_A * A_score + w_B * B_score + w_C * C_score +
                  w_D * D_score + w_E * E_score) / total_w
@@ -496,7 +527,7 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
         wise_result, z=z
     )
     # FIX 8: NO abs() — use signed delta_mag for scoring (|frac_change| for norm)
-    score_delta_mag = _norm_delta_mag(frac_change)
+    score_delta_mag = _norm_frac_flux_change(frac_change)
 
     # Score for flux ratio (same amplitude evidence, different normalization)
     # flux_ratio > 1 = brightened; (flux_ratio - 1) for turn-on,  (1/flux_ratio - 1) for turn-off
@@ -525,7 +556,7 @@ def compute_composite_clagn_score(source_record, wise_result, drw_results,
     w1_flux_mean = (float(np.nanmean(lc['w1_flux_mjy'].values))
                     if lc is not None and 'w1_flux_mjy' in lc.columns
                     else 1.0)
-    sigma_excess = _compute_sigma_excess(sigma_drw_obs, w1_flux_mean)
+    sigma_excess = _compute_flux_variability_excess(sigma_drw_obs, w1_flux_mean)
     score_sigma_excess = _norm_sigma_excess(sigma_excess)
 
     # ---- Component 7: GAIA Optical Variability ------------------------------
@@ -803,7 +834,12 @@ def apply_false_positive_rejection(candidates_df, lc_dict, wise_dict_map):
 
         # ---- Check 4: Host galaxy contamination ---------------------------
         host_risk = bool(row.get('host_contamination_risk', False))
-        delta_mag  = _safe(row.get('w1_delta_mag'), default=0.0)
+        delta_mag = _safe(
+            row.get('delta_mag_w1',
+            row.get('w1_delta_mag',
+            row.get('delta_mag', 0.0))),
+            default=0.0
+        )
         if host_risk and delta_mag < 0.5:
             flags.append(
                 'host_contamination_risk(z<0.05,marginal_delta_mag)'
@@ -828,32 +864,59 @@ def _check_wise_artifact(lc):
     """
     Check if variability is driven by a single extreme WISE epoch.
 
-    Method: Find the single most deviant epoch (largest |flux - median|).
-    Remove it and recompute delta_flux. If delta_flux drops by > 50%,
+    score-H8: Uses seasonal delta_mag method. Finds most deviant epoch by
+    MAD z-score. If removing that epoch causes delta_mag to drop by > 40%,
     the variability is artifact-driven.
 
     Returns True if artifact suspected.
     """
+    if 'mjd' not in lc.columns or 'w1_flux_mjy' not in lc.columns:
+        return False
+
+    mjd    = lc['mjd'].values
     fluxes = lc['w1_flux_mjy'].values
-    valid = np.isfinite(fluxes)
+    errors = (lc['w1_flux_err_mjy'].values
+              if 'w1_flux_err_mjy' in lc.columns
+              else np.where(np.isfinite(fluxes) & (fluxes > 0), fluxes * 0.05, np.nan))
+
+    valid = np.isfinite(fluxes) & (fluxes > 0) & np.isfinite(errors) & (errors > 0)
     if valid.sum() < 10:
         return False
 
     f = fluxes[valid]
-    median_flux = np.nanmedian(f)
-    deviations  = np.abs(f - median_flux)
-    delta_flux_full = float(f.max() - f.min())
+    t = mjd[valid]
+    e = errors[valid]
 
-    if delta_flux_full <= 0:
+    # Find most deviant epoch by MAD z-score
+    med = np.nanmedian(f)
+    mad = np.nanmedian(np.abs(f - med))
+    if mad <= 0:
         return False
 
-    # Remove the single most deviant epoch
-    worst_idx = np.argmax(deviations)
-    f_reduced = np.delete(f, worst_idx)
-    delta_flux_reduced = float(f_reduced.max() - f_reduced.min())
+    z_scores = np.abs(f - med) / (1.4826 * mad + 1e-30)
+    worst_idx = int(np.argmax(z_scores))
+    if z_scores[worst_idx] < 3.0:
+        return False   # No extreme outlier — not artifact-driven
 
-    reduction_fraction = 1.0 - (delta_flux_reduced / delta_flux_full)
-    return reduction_fraction > 0.50
+    # Compute delta_mag on full dataset
+    dm_full = compute_delta_mag_correct(t, f, e)
+    if dm_full is None:
+        return False
+    delta_full = abs(dm_full['delta_mag'])
+
+    # Compute delta_mag without the worst epoch
+    keep = np.ones(len(f), dtype=bool)
+    keep[worst_idx] = False
+    dm_clean = compute_delta_mag_correct(t[keep], f[keep], e[keep])
+    if dm_clean is None:
+        # If we can't compute without that epoch, it's definitely artifact-driven
+        return True
+    delta_clean = abs(dm_clean['delta_mag'])
+
+    # If single epoch drove > 40% of amplitude, flag as artifact
+    if delta_full > 0 and (delta_clean < delta_full * 0.6):
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -921,72 +984,75 @@ def _norm_gaia_var_v2(gaia_lc, gaia_photometry):
     return float(np.clip(score, 0.0, 1.0))
 
 
-def _bootstrap_score_uncertainty(times, fluxes, errors, n_bootstrap=1000, z=0.1):
+def _bootstrap_score_uncertainty(source_data, n_bootstrap=100):
     """Bootstrap uncertainty estimate for composite score.
 
-    Resamples epochs 1000 times, recomputes delta_mag, changepoint_bic,
-    drw_nonstationarity components.
+    score-C1: Bootstrap only delta_mag (DRW nonstationarity is too expensive and
+    disrupts the temporal structure of bootstrap resamples).
+
+    Parameters
+    ----------
+    source_data : dict with keys 'times', 'w1_flux_mjy', 'w1_flux_err_mjy', 'z'
+    n_bootstrap : int
 
     Returns
     -------
-    float : standard deviation of bootstrap composite scores (in [0,1] space)
+    dict with: score_err, score_err_lo, score_err_hi, n_bootstrap, bootstrap_component
     """
-    if times is None or len(times) < 10:
-        return np.nan
+    t = source_data.get('times')
+    f = source_data.get('w1_flux_mjy')
+    e = source_data.get('w1_flux_err_mjy')
+    z = float(source_data.get('z', 0.1))
+
+    if t is None or len(t) < 10:
+        return {'score_err': np.nan, 'score_err_lo': np.nan, 'score_err_hi': np.nan,
+                'n_bootstrap': 0, 'bootstrap_component': 'delta_mag'}
 
     try:
-        from ..models.drw import compute_drw_nonstationarity
-
         rng = np.random.default_rng(42)
         bootstrap_scores = []
 
         for _ in range(n_bootstrap):
-            idx = rng.integers(0, len(times), size=len(times))
-            t_b = times[idx]
-            f_b = fluxes[idx]
-            e_b = errors[idx]
+            idx = rng.integers(0, len(t), size=len(t))
+            t_b = t[idx]
+            f_b = f[idx]
+            e_b = e[idx]
 
+            # Re-sort bootstrap sample by time
             sort_order = np.argsort(t_b)
             t_b = t_b[sort_order]
             f_b = f_b[sort_order]
             e_b = e_b[sort_order]
 
-            # Delta mag component
-            n = len(f_b)
-            mid = n // 2
-            f_early = np.median(f_b[:mid])
-            f_late = np.median(f_b[mid:])
-            f_mean = np.mean(f_b)
-            if f_mean > 0:
-                delta_frac = abs(f_late - f_early) / f_mean
-                c_delta = float(np.clip(delta_frac / 2.0, 0.0, 1.0))
+            # Delta mag via seasonal median method
+            dm_result = compute_delta_mag_correct(t_b, f_b, e_b, z=z)
+            if dm_result is not None:
+                frac_change = abs(dm_result['flux_ratio'] - 1.0)
+                c_delta = _norm_frac_flux_change(frac_change)
             else:
                 c_delta = 0.0
 
-            # DRW nonstationarity component
-            try:
-                nonstat = compute_drw_nonstationarity(t_b, f_b, e_b, z=z)
-                c_nonstat = _norm_drw_nonstat(nonstat.get('nonstationarity_sigma', 0.0))
-            except Exception:
-                c_nonstat = 0.0
+            bootstrap_scores.append(float(c_delta))
 
-            # Simplified composite from 3 most important components
-            w_delta = SCORE_WEIGHTS_V2['delta_mag_w1']
-            w_nonstat = SCORE_WEIGHTS_V2['drw_nonstationarity']
-            total_w = w_delta + w_nonstat
-            composite = (w_delta * c_delta + w_nonstat * c_nonstat) / MAX_SCORE_V2
-
-            bootstrap_scores.append(float(composite))
-
-        return float(np.std(bootstrap_scores))
+        scores_arr = np.array(bootstrap_scores)
+        score_std  = float(np.std(scores_arr))
+        pct = np.percentile(scores_arr, [16, 84])
+        return {
+            'score_err':           score_std,
+            'score_err_lo':        float(pct[0]),
+            'score_err_hi':        float(pct[1]),
+            'n_bootstrap':         n_bootstrap,
+            'bootstrap_component': 'delta_mag',
+        }
     except Exception:
-        return np.nan
+        return {'score_err': np.nan, 'score_err_lo': np.nan, 'score_err_hi': np.nan,
+                'n_bootstrap': 0, 'bootstrap_component': 'delta_mag'}
 
 
-def compute_composite_score_v2(source, lc_data, drw_map, drw_mcmc_results,
-                                broken_drw, nonstat_gp, sf_results,
-                                cp_results, variability_stats,
-                                gaia_lc, gaia_photometry, physics_results):
+def compute_composite_score_v2(source, lc_data=None, drw_map=None, drw_mcmc_results=None,
+                                broken_drw=None, nonstat_gp=None, sf_results=None,
+                                cp_results=None, variability_stats=None,
+                                gaia_lc=None, gaia_photometry=None, physics_results=None):
     """10-component CLAGN scorer v2.
 
     Incorporates broken DRW, non-stationary GP, flux bimodality, and
@@ -1029,16 +1095,21 @@ def compute_composite_score_v2(source, lc_data, drw_map, drw_mcmc_results,
         elif hasattr(lc_data, 'columns'):
             df = lc_data
 
+        # score-C3: fallback to 'epochs_df' key in source dict
+        if df is None and isinstance(source, dict) and 'epochs_df' in source:
+            df = source['epochs_df']
+
         if df is not None and len(df) > 5:
             for col_t in ['mjd']:
                 if col_t in df.columns:
                     times = df[col_t].values
                     break
-            for col_f in ['w1flux', 'w1flux_ep']:
+            # score-C3: try canonical column names first
+            for col_f in ['w1_flux_mjy', 'w1flux', 'w1flux_ep', 'w1_flux']:
                 if col_f in df.columns:
                     fluxes = df[col_f].values
                     break
-            for col_e in ['w1flux_err', 'w1sigflux_ep', 'w1sigflux']:
+            for col_e in ['w1_flux_err_mjy', 'w1flux_err', 'w1sigflux_ep', 'w1sigflux', 'w1_flux_err']:
                 if col_e in df.columns:
                     errors = df[col_e].values
                     break
@@ -1076,7 +1147,7 @@ def compute_composite_score_v2(source, lc_data, drw_map, drw_mcmc_results,
         f_mean = np.mean(fluxes)
         if f_mean > 0:
             delta_mag_frac = abs(f_late - f_early) / f_mean
-    c4_delta_mag = _norm_delta_mag(delta_mag_frac)
+    c4_delta_mag = _norm_frac_flux_change(delta_mag_frac)
 
     # --- Component 5: Changepoint BIC ---
     cp_delta_bic = np.nan
@@ -1135,16 +1206,23 @@ def compute_composite_score_v2(source, lc_data, drw_map, drw_mcmc_results,
     }
 
     raw_score = sum(w[k] * components[k] for k in w)
-    composite_score_v2 = raw_score / MAX_SCORE_V2
+    # score-M13: Verify MAX_SCORE_V2 matches sum of weights (guards against drift)
+    max_score_actual = sum(SCORE_WEIGHTS_V2.values())
+    assert abs(max_score_actual - MAX_SCORE_V2) < 0.01, (
+        f"MAX_SCORE_V2={MAX_SCORE_V2} != sum(SCORE_WEIGHTS_V2)={max_score_actual}"
+    )
+    composite_score_v2 = raw_score / max_score_actual
 
-    # Bootstrap uncertainty estimate
+    # Bootstrap uncertainty estimate (score-C1: dict signature)
     composite_score_err = np.nan
     if times is not None and fluxes is not None and errors is not None:
         valid = np.isfinite(times) & np.isfinite(fluxes) & np.isfinite(errors) & (errors > 0)
         if valid.sum() >= 10:
             composite_score_err = _bootstrap_score_uncertainty(
-                times[valid], fluxes[valid], errors[valid], n_bootstrap=1000, z=z
-            )
+                {'times': times[valid], 'w1_flux_mjy': fluxes[valid],
+                 'w1_flux_err_mjy': errors[valid], 'z': z},
+                n_bootstrap=100
+            ).get('score_err', np.nan)
 
     return {
         'composite_score_v2': float(np.clip(composite_score_v2, 0.0, 1.0)),

@@ -209,8 +209,7 @@ def process_single_source(args_tuple):
             times, w1_flux, w1_flux_err, z,
             drw_map['tau_rest_days'], drw_map['sigma_drw'],
         )
-        # nonstat = (nonstationarity_sigma, delta_mean_normalized, mean_early, mean_late)
-        nonstationarity_sigma = nonstat[0] if isinstance(nonstat, tuple) else nonstat
+        nonstationarity_sigma = nonstat.get('nonstationarity_sigma', 0.0)
         drw_map['nonstationarity_sigma'] = (
             float(nonstationarity_sigma) if np.isfinite(float(nonstationarity_sigma or 0))
             else 0.0

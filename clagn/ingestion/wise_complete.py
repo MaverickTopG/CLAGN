@@ -27,9 +27,6 @@ from ..config import (
     WISE_ALLSKY_TABLE,
     WISE_3BAND_TABLE,
     WISE_POSTCRYO_TABLE,
-    WISE_ALLSKY_MJD_END,
-    WISE_3BAND_MJD_END,
-    WISE_POSTCRYO_MJD_END,
     WISE_FULL_BASELINE_START_MJD,
     WISE_HIBERNATION_MJD_START,
     WISE_HIBERNATION_MJD_END,
@@ -96,6 +93,10 @@ def irsa_query_with_retry(catalog, coords, radius, columns=None,
     Wrapper around Irsa.query_region() with exponential backoff retry,
     rate-limit handling, and graceful None return on persistent failure.
 
+    NOTE: This function uses the cone-search API (Irsa.query_region).
+    The primary pipeline uses TAP queries via _irsa_tap_query().
+    Retained as fallback if TAP endpoint is unavailable.
+
     Parameters
     ----------
     catalog : str
@@ -148,6 +149,59 @@ def irsa_query_with_retry(catalog, coords, radius, columns=None,
 
     logger.error(f"IRSA query failed after {max_retries} retries: catalog={catalog}")
     return None
+
+
+def _query_wise_table_safe(catalog_name: str, ra: float, dec: float,
+                            radius_arcsec: float, primary_columns: str,
+                            fallback_columns: str = None):
+    """
+    Schema-safe early WISE table query (Fix #11).
+
+    Tries full column list first; on column-not-found failure retries with
+    minimal fallback columns. Returns (result_df, schema_used) where
+    schema_used is one of 'full_schema', 'fallback_schema', 'failed'.
+
+    Parameters
+    ----------
+    catalog_name : str
+        IRSA TAP table name
+    ra, dec : float
+        ICRS degrees
+    radius_arcsec : float
+        Cone search radius in arcseconds
+    primary_columns : str
+        Comma-separated primary column list
+    fallback_columns : str or None
+        Minimal fallback column list; if None uses 'ra,dec,mjd,w1mpro,w1sigmpro'
+
+    Returns
+    -------
+    df : pd.DataFrame
+    schema_used : str
+    """
+    if fallback_columns is None:
+        fallback_columns = "ra, dec, mjd, w1mpro, w1sigmpro, w2mpro, w2sigmpro"
+
+    adql_full = _build_cone_adql(catalog_name, primary_columns, ra, dec, radius_arcsec)
+    try:
+        df = _irsa_tap_query(adql_full)
+        return df, 'full_schema'
+    except Exception as exc:
+        err_msg = str(exc).lower()
+        if 'column' in err_msg or 'field' in err_msg or 'unknown' in err_msg:
+            logger.warning(
+                f"Schema mismatch for {catalog_name}, retrying with fallback columns: {exc}"
+            )
+            try:
+                adql_fallback = _build_cone_adql(
+                    catalog_name, fallback_columns, ra, dec, radius_arcsec
+                )
+                df = _irsa_tap_query(adql_fallback)
+                return df, 'fallback_schema'
+            except Exception as exc2:
+                logger.error(f"Fallback query also failed for {catalog_name}: {exc2}")
+                return pd.DataFrame(), 'failed'
+        raise
 
 
 def _build_cone_adql(table: str, columns: str, ra: float, dec: float,
@@ -312,22 +366,45 @@ def _normalise_early_frame(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
         (mjd_vals < WISE_HIBERNATION_MJD_END)
     )
 
-    # Flux conversion
+    # Flux conversion — Fix #13: no synthetic error injection
     for band in ['W1', 'W2']:
         mag_col = 'w1_mag' if band == 'W1' else 'w2_mag'
         err_col = 'w1_err' if band == 'W1' else 'w2_err'
-        flux_col = f'w{band[1]}_flux_mjy'
-        ferr_col = f'w{band[1]}_flux_err_mjy'
+        flux_col  = f'w{band[1]}_flux_mjy'
+        ferr_col  = f'w{band[1]}_flux_err_mjy'
+        raw_flux_col = 'w1flux' if band == 'W1' else 'w2flux'
+        raw_ferr_col = 'w1sigflux' if band == 'W1' else 'w2sigflux'
 
         if mag_col in df.columns and err_col in df.columns:
             mag_arr = pd.to_numeric(df[mag_col], errors='coerce').values
-            err_arr = pd.to_numeric(df[err_col], errors='coerce').fillna(0.1).values
+
+            # Fix #13: derive mag error from flux/sigflux when available;
+            # fall back to reported mag error; never inject synthetic 0.1
+            if raw_flux_col in df.columns and raw_ferr_col in df.columns:
+                f_raw  = pd.to_numeric(df[raw_flux_col], errors='coerce').values
+                df_raw = pd.to_numeric(df[raw_ferr_col], errors='coerce').values
+                err_from_flux = np.where(
+                    (f_raw > 0) & np.isfinite(df_raw),
+                    1.08574 * np.abs(df_raw) / f_raw,
+                    np.nan
+                )
+                err_arr = pd.Series(err_from_flux, index=df.index)
+            else:
+                err_arr = pd.to_numeric(df[err_col], errors='coerce')
+            # Preserve provenance flag
+            df[f'{err_col}_source'] = np.where(
+                pd.to_numeric(err_arr, errors='coerce').isna(), 'missing', 'real'
+            )
+            err_arr = err_arr.values
+
             valid = np.isfinite(mag_arr)
             flux = np.full(len(df), np.nan)
             ferr = np.full(len(df), np.nan)
             if valid.any():
+                # Use NaN errors where not available (no synthetic fill)
+                err_for_valid = np.where(np.isfinite(err_arr[valid]), err_arr[valid], np.nan)
                 flux[valid], ferr[valid] = _mag_to_flux_mjy(
-                    mag_arr[valid], err_arr[valid], band
+                    mag_arr[valid], err_for_valid, band
                 )
             df[flux_col] = flux
             df[ferr_col] = ferr
@@ -420,7 +497,8 @@ def _deduplicate(df: pd.DataFrame, window: float = _DEDUP_WINDOW_DAYS) -> pd.Dat
         # Collect cluster
         cluster = [i]
         j = i + 1
-        while j < len(mjd) and (mjd[j] - mjd[cluster[0]]) < window:
+        # Fix #14: adjacency-based clustering (each point within window of previous)
+        while j < len(mjd) and (mjd[j] - mjd[j - 1]) < window:
             cluster.append(j)
             j += 1
         # Keep best SNR (smallest err)
@@ -482,7 +560,7 @@ def sigma_clip_in_flux_space(times, fluxes, flux_errors, sigma=4.0, maxiters=5):
 # ---------------------------------------------------------------------------
 
 def compute_wise_seasonal_structure(times: np.ndarray, fluxes: np.ndarray,
-                                    errors: np.ndarray) -> pd.DataFrame:
+                                    errors: np.ndarray) -> dict:
     """
     Bin the WISE light curve into ~6-month seasons and compute per-season statistics.
 
@@ -494,18 +572,19 @@ def compute_wise_seasonal_structure(times: np.ndarray, fluxes: np.ndarray,
 
     Returns
     -------
-    DataFrame with columns:
-        season_center_mjd, n_epochs, median_flux, mad_flux, weighted_mean_flux,
-        flux_rms, season_label
+    dict with key 'seasons' (list of per-season dicts), each containing:
+        season_center_mjd, season_index, season_label, n_epochs,
+        median_flux, mad_flux, weighted_mean_flux, mean_flux_mjy,
+        variability_rms_flux_mjy, wise_season_anchor_mjd
     """
     times = np.asarray(times, dtype=float)
     fluxes = np.asarray(fluxes, dtype=float)
     errors = np.asarray(errors, dtype=float)
 
     if len(times) < 2:
-        return pd.DataFrame()
+        return {'seasons': []}
 
-    # FLAW A2: Use global anchor so all sources have identical season boundaries
+    # Use global anchor so all sources have identical season boundaries
     bin_width = 182.625  # 6 months in days
     first_bin = int(np.floor((times.min() - WISE_SEASON_ANCHOR_MJD) / bin_width))
     last_bin  = int(np.floor((times.max() - WISE_SEASON_ANCHOR_MJD) / bin_width)) + 1
@@ -525,24 +604,32 @@ def compute_wise_seasonal_structure(times: np.ndarray, fluxes: np.ndarray,
 
         med_f = float(np.nanmedian(f))
         mad_f = float(np.nanmedian(np.abs(f - med_f)))
-        rms_f = float(np.sqrt(np.nanmean(f ** 2)))
 
-        # Inverse-variance weighted mean
+        # Fix #9: inverse-variance weighted mean and CENTERED variability RMS
         w = 1.0 / np.where(e > 0, e ** 2, 1e-6)
-        wmean = float(np.sum(w * f) / np.sum(w)) if np.sum(w) > 0 else med_f
+        w_sum = np.sum(w)
+        wmean = float(np.sum(w * f) / w_sum) if w_sum > 0 else med_f
+        mu_f  = wmean
+        rms_f = float(np.sqrt(np.average((f - mu_f) ** 2, weights=w)))
+
+        # Fix #15: season label with signed index, zero-padded
+        season_index = int(first_bin + i)
+        season_label = f"S{season_index:+04d}"   # e.g. S+003, S-002
 
         rows.append({
             'season_center_mjd': float(0.5 * (t_lo + t_hi)),
+            'season_index': season_index,
+            'season_label': season_label,
             'n_epochs': n,
             'median_flux': med_f,
             'mad_flux': mad_f,
             'weighted_mean_flux': wmean,
-            'flux_rms': rms_f,
-            'season_label': f"S{first_bin + i + 1:02d}",
+            'mean_flux_mjy': mu_f,
+            'variability_rms_flux_mjy': rms_f,
             'wise_season_anchor_mjd': WISE_SEASON_ANCHOR_MJD,
         })
 
-    return pd.DataFrame(rows)
+    return {'seasons': rows}
 
 
 # ---------------------------------------------------------------------------
@@ -551,40 +638,42 @@ def compute_wise_seasonal_structure(times: np.ndarray, fluxes: np.ndarray,
 
 def compute_wise_epoch_weights(df: pd.DataFrame) -> np.ndarray:
     """
-    Compute per-epoch weights for DRW fitting.
+    Compute per-epoch inverse-variance weights for DRW fitting.
 
-    Weight = 1 / (w1_err^2 + floor^2)
-    where floor = 0.01 mJy (systematic noise floor).
-    Weights are normalized to have a maximum of 1.
+    Fix #3: proper unit-aware logic; never mixes magnitude and flux units.
+    Three priority cases:
+        1. w1_flux_err_mjy present → use directly (flux units)
+        2. w1_err + w1_flux_mjy present → convert mag error to flux error
+        3. Neither → uniform weights
 
     Parameters
     ----------
-    df : DataFrame with columns w1_err and/or w1_flux_err_mjy
+    df : DataFrame
 
     Returns
     -------
-    weights : array, same length as df
+    weights : array, same length as df (un-normalized inverse-variance)
     """
     if df.empty:
         return np.array([])
 
-    # Prefer flux errors in mJy; fall back to magnitude errors
+    FLUX_ERROR_FLOOR_MJY = 0.005  # mJy systematic noise floor
+
+    # Case 1: flux errors in mJy — use directly
     if 'w1_flux_err_mjy' in df.columns:
-        err = pd.to_numeric(df['w1_flux_err_mjy'], errors='coerce').fillna(0.1).values
-    elif 'w1_err' in df.columns:
-        err = pd.to_numeric(df['w1_err'], errors='coerce').fillna(0.1).values
+        err = pd.to_numeric(df['w1_flux_err_mjy'], errors='coerce').values
+    # Case 2: magnitude error — convert to flux error: dF = F * 0.92103 * |dmag|
+    elif {'w1_err', 'w1_flux_mjy'}.issubset(df.columns):
+        f  = pd.to_numeric(df['w1_flux_mjy'], errors='coerce').values
+        dm = pd.to_numeric(df['w1_err'],      errors='coerce').values
+        err = f * 0.92103 * np.abs(dm)
+    # Case 3: no error — uniform weights
     else:
         return np.ones(len(df))
 
-    floor = 0.01  # mJy systematic floor
-    var = err ** 2 + floor ** 2
-    weights = 1.0 / np.where(var > 0, var, 1e-6)
-
-    # Normalize
-    w_max = weights.max()
-    if w_max > 0:
-        weights /= w_max
-
+    err = np.where(np.isfinite(err) & (err > 0), err, np.nan)
+    err_floored = np.sqrt(err ** 2 + FLUX_ERROR_FLOOR_MJY ** 2)
+    weights = np.where(np.isfinite(err_floored), 1.0 / err_floored ** 2, 0.0)
     return weights
 
 
@@ -790,7 +879,8 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
     in_gap_count = int(in_gap_mask.sum())
     combined = combined[~in_gap_mask].reset_index(drop=True)
 
-    # ---- Sigma clipping on W1 flux -------------------------------------------
+    # ---- Stage 0: Sigma clipping on W1 flux ----------------------------------
+    n_before_clip = len(combined)
     if 'w1_flux_mjy' in combined.columns:
         flux = pd.to_numeric(combined['w1_flux_mjy'], errors='coerce').values
         ferr = pd.to_numeric(
@@ -812,6 +902,7 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
             keep &= np.abs(flux - med) < SIGMA_CLIP_SIGMA * sigma_mad
 
         combined = combined[keep].reset_index(drop=True)
+    n_sigma_clipped = n_before_clip - len(combined)
 
     # ---- Deduplicate -----------------------------------------------------------
     combined = _deduplicate(combined)
@@ -823,13 +914,17 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
     # ---- Per-dataset counts ---------------------------------------------------
     n_by_dataset = combined['dataset'].value_counts().to_dict() if 'dataset' in combined.columns else {}
 
-    # ---- Baseline metrics ----------------------------------------------------
+    # ---- Stage 1: Baseline metrics (Fix #1) ----------------------------------
     mjd_vals = combined['mjd'].values
-    mjd_first = float(mjd_vals.min())
-    mjd_last = float(mjd_vals.max())
-    baseline_years = (mjd_last - WISE_FULL_BASELINE_START_MJD) / 365.25
+    mjd_first = float(np.nanmin(mjd_vals))
+    mjd_last  = float(np.nanmax(mjd_vals))
+    # Fix #1: actual span between first and last observed epoch
+    baseline_years_actual = (mjd_last - mjd_first) / 365.25
+    # Additional: time since mission start (for context)
+    baseline_years_since_mission_start = (mjd_last - WISE_FULL_BASELINE_START_MJD) / 365.25
+    baseline_years = baseline_years_actual  # canonical value
 
-    # ---- Seasonal structure ---------------------------------------------------
+    # ---- Stage 2: Seasonal structure -----------------------------------------
     if 'w1_flux_mjy' in combined.columns:
         flux_arr = pd.to_numeric(combined['w1_flux_mjy'], errors='coerce').values
         ferr_arr = pd.to_numeric(
@@ -838,19 +933,19 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
         ).values
         seasonal = compute_wise_seasonal_structure(mjd_vals, flux_arr, ferr_arr)
     else:
-        seasonal = pd.DataFrame()
+        seasonal = {'seasons': []}
 
-    # ---- Epoch weights -------------------------------------------------------
+    # ---- Stage 3: Epoch weights ----------------------------------------------
     epoch_weights = compute_wise_epoch_weights(combined)
 
-    # ---- Color ---------------------------------------------------------------
+    # ---- Stage 4: Color ------------------------------------------------------
     color_vals = pd.to_numeric(
         combined.get('w1_minus_w2', pd.Series(np.nan, index=combined.index)),
         errors='coerce'
     ).values
     w1w2_median = float(np.nanmedian(color_vals)) if np.any(np.isfinite(color_vals)) else np.nan
 
-    # ---- FIX 4: Flag W2 systematic epochs (MJD 57000-57071) ----------------
+    # ---- Stage 5: Flag W2 systematic epochs (MJD 57000-57071) ---------------
     w2_systematic_flag = np.zeros(len(combined), dtype=bool)
     if 'mjd' in combined.columns:
         mjd_arr = combined['mjd'].values
@@ -864,21 +959,28 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
                 f"systematic window (NEOWISE docs)"
             )
 
-    # ---- FIX 14: Saturation check -------------------------------------------
-    w1_mag_median = np.nan
-    w2_mag_median = np.nan
-    if 'w1_mag' in combined.columns:
-        w1_mags = pd.to_numeric(combined['w1_mag'], errors='coerce').values
-        w1_mag_median = float(np.nanmedian(w1_mags[np.isfinite(w1_mags)])) if np.any(np.isfinite(w1_mags)) else np.nan
-    if 'w2_mag' in combined.columns:
-        w2_mags = pd.to_numeric(combined['w2_mag'], errors='coerce').values
-        w2_mag_median = float(np.nanmedian(w2_mags[np.isfinite(w2_mags)])) if np.any(np.isfinite(w2_mags)) else np.nan
+    # ---- Stage 6: Per-epoch saturation check (Fix #5) -----------------------
+    w1_mags_arr = pd.to_numeric(
+        combined.get('w1_mag', pd.Series(np.nan, index=combined.index)),
+        errors='coerce'
+    ).values
+    w2_mags_arr = pd.to_numeric(
+        combined.get('w2_mag', pd.Series(np.nan, index=combined.index)),
+        errors='coerce'
+    ).values
+    sat_result = check_wise_saturation_complete(w1_mags_arr, w2_mags_arr, mjd_vals)
+    saturation_flag = sat_result['saturation_flag']
+    if saturation_flag == 'saturated':
+        logger.warning(
+            f"{source_id}: WISE saturation detected — "
+            f"W1={sat_result['n_w1_saturated_epochs']} epochs, "
+            f"W2={sat_result['n_w2_saturated_epochs']} epochs"
+        )
 
-    w1_reliable, w2_reliable, saturation_flag = check_wise_saturation(
-        w1_mag_median, w2_mag_median
-    )
-    if saturation_flag:
-        logger.warning(f"{source_id}: WISE photometry reliability warning: {saturation_flag}")
+    # Legacy scalar medians (for backward compat with check_wise_saturation)
+    w1_mag_median = sat_result['w1_median_mag']
+    w2_mag_median = sat_result['w2_median_mag']
+    w1_reliable, w2_reliable, _ = check_wise_saturation(w1_mag_median, w2_mag_median)
 
     logger.info(
         f"{source_id}: Complete WISE — {len(combined)} epochs | "
@@ -888,7 +990,9 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
 
     return {
         'lc': combined,
-        'baseline_years': float(baseline_years),
+        # Fix #1: actual baseline (first-to-last epoch)
+        'baseline_years': float(baseline_years_actual),
+        'baseline_years_since_mission_start': float(baseline_years_since_mission_start),
         'n_epochs_total': len(combined),
         'n_epochs_allsky': n_by_dataset.get('allsky', 0),
         'n_epochs_3band': n_by_dataset.get('3band', 0),
@@ -904,11 +1008,14 @@ def query_all_wise_epochs(ra: float, dec: float, source_id: str) -> dict:
         'seasonal_structure': seasonal,
         'epoch_weights': epoch_weights,
         'w2_systematic_flag_count': int(w2_systematic_flag.sum()),
-        'w1_mag_median': float(w1_mag_median),
-        'w2_mag_median': float(w2_mag_median),
+        'w1_mag_median': float(w1_mag_median) if np.isfinite(w1_mag_median) else np.nan,
+        'w2_median_mag': float(w2_mag_median) if np.isfinite(w2_mag_median) else np.nan,
         'w1_photometry_reliable': bool(w1_reliable),
         'w2_photometry_reliable': bool(w2_reliable),
         'saturation_flag': saturation_flag,
+        'n_w1_saturated_epochs': sat_result['n_w1_saturated_epochs'],
+        'n_w2_saturated_epochs': sat_result['n_w2_saturated_epochs'],
+        'n_sigma_clipped': n_sigma_clipped,
         'rejection_reason': None,
     }
 
@@ -922,34 +1029,54 @@ def compute_wise_quality_masks(table):
     Compute SEPARATE quality masks for W1 and W2.
     Do NOT use a W1-only mask for both bands.
 
-    Returns three masks:
-    - mask_w1: epochs where W1 is reliable
-    - mask_w2: epochs where W2 is reliable
-    - mask_joint: epochs where BOTH are reliable (use for color/coherence)
+    Fix #4: schema-safe — uses helper getters that return safe defaults for
+    missing columns and returns missing_cols for transparency.
+
+    Returns
+    -------
+    mask_w1 : pd.Series[bool] — epochs where W1 is reliable
+    mask_w2 : pd.Series[bool] — epochs where W2 is reliable
+    mask_joint : pd.Series[bool] — epochs where BOTH are reliable
+    missing_cols : list[str] — column names absent from table
     """
-    # W1 quality criteria
+    n = len(table)
+    idx = table.index if hasattr(table, 'index') else range(n)
+    missing_cols = []
+
+    def _col(col, fill=0.0):
+        if col not in table.columns:
+            missing_cols.append(col)
+            return pd.Series(fill, index=idx, dtype=float)
+        return pd.to_numeric(table[col], errors='coerce').fillna(fill)
+
+    def _str_col(col):
+        if col not in table.columns:
+            missing_cols.append(col)
+            return pd.Series(['X'] * n, index=idx)
+        return table[col].fillna('X').astype(str).str.strip()
+
+    cc = _str_col('cc_flags')
+    w1cc_ok = cc.str[:1].isin(['0', 'H', 'h'])
+    w2cc_ok = cc.apply(lambda c: c[1] in ('0', 'H', 'h') if len(c) > 1 else False)
+
     mask_w1 = (
-        (pd.to_numeric(table['w1snr'],    errors='coerce').fillna(0) >= 5.0) &
-        (pd.to_numeric(table['w1rchi2'],  errors='coerce').fillna(99) < 5.0) &
-        (pd.to_numeric(table['w1sat'],    errors='coerce').fillna(1) == 0)   &
-        (pd.to_numeric(table['w1sigmpro'], errors='coerce').fillna(0) > 0)   &
-        np.array([str(c)[0] in ('0', 'H', 'h')
-                  for c in table['cc_flags']])  # W1 cc_flag char 0
+        (_col('w1snr',    fill=0.0) >= 5.0) &
+        (_col('w1rchi2',  fill=99.0) < 5.0) &
+        (_col('w1sat',    fill=1.0) == 0)   &
+        (_col('w1sigmpro', fill=0.0) > 0)   &
+        w1cc_ok
     )
 
-    # W2 quality criteria — SAME stringency as W1
     mask_w2 = (
-        (pd.to_numeric(table['w2snr'],    errors='coerce').fillna(0) >= 5.0) &
-        (pd.to_numeric(table['w2rchi2'],  errors='coerce').fillna(99) < 5.0) &
-        (pd.to_numeric(table['w2sat'],    errors='coerce').fillna(1) == 0)   &
-        (pd.to_numeric(table['w2sigmpro'], errors='coerce').fillna(0) > 0)   &
-        np.array([str(c)[1] in ('0', 'H', 'h') if len(str(c)) > 1 else False
-                  for c in table['cc_flags']])  # W2 cc_flag char 1
+        (_col('w2snr',    fill=0.0) >= 5.0) &
+        (_col('w2rchi2',  fill=99.0) < 5.0) &
+        (_col('w2sat',    fill=1.0) == 0)   &
+        (_col('w2sigmpro', fill=0.0) > 0)   &
+        w2cc_ok
     )
 
     mask_joint = mask_w1 & mask_w2
-
-    return mask_w1, mask_w2, mask_joint
+    return mask_w1, mask_w2, mask_joint, list(set(missing_cols))
 
 
 # ---------------------------------------------------------------------------
@@ -969,11 +1096,27 @@ def compute_seasonal_flux_and_uncertainty(times, fluxes, errors, season_id):
     results = {}
     for s in np.unique(season_id):
         mask = season_id == s
-        if mask.sum() < 2:
-            continue
+        n = int(mask.sum())
 
         f_s = fluxes[mask]
         e_s = errors[mask]
+
+        # Fix #10: handle singleton seasons conservatively
+        if n == 1:
+            mean_flux  = float(f_s[0])
+            formal_err = float(e_s[0])
+            cal_floor  = WISE_CALIBRATION_FLOOR_FRACTION * abs(mean_flux)
+            total_err  = float(np.sqrt(formal_err ** 2 + cal_floor ** 2))
+            results[int(s)] = {
+                'mean_flux':              mean_flux,
+                'total_err':              total_err,
+                'n_epochs':               1,
+                'intra_season_scatter':   np.nan,
+                'formal_err':             formal_err,
+                'singleton':              True,
+            }
+            continue
+
         w_s = 1.0 / np.maximum(e_s ** 2, 1e-30)
 
         # Weighted mean
@@ -995,11 +1138,12 @@ def compute_seasonal_flux_and_uncertainty(times, fluxes, errors, season_id):
         )
 
         results[int(s)] = {
-            'mean_flux': float(mean_flux),
-            'total_err': float(total_err),
-            'n_epochs': int(mask.sum()),
+            'mean_flux':            float(mean_flux),
+            'total_err':            float(total_err),
+            'n_epochs':             n,
             'intra_season_scatter': float(scatter),
-            'formal_err': float(formal_err),
+            'formal_err':           float(formal_err),
+            'singleton':            False,
         }
 
     return results
@@ -1013,35 +1157,66 @@ def check_wise_saturation_complete(w1_mags, w2_mags, times):
     """
     Check saturation on per-epoch basis, not just median.
 
+    Fix #5: Returns per-epoch boolean arrays aligned to input arrays.
     A source entering saturation during a bright state is the most
     dangerous case — exactly the epochs most relevant to CLAGN detection.
+
+    Parameters
+    ----------
+    w1_mags, w2_mags : array-like, W1/W2 Vega magnitudes (NaN allowed)
+    times : array-like, MJD values aligned to w1_mags/w2_mags
+
+    Returns
+    -------
+    dict with per-epoch masks and scalar summary statistics
     """
-    W1_SAT_LIMIT = 8.0   # mag, Vega (from WISE docs)
-    W2_SAT_LIMIT = 6.7
+    W1_SAT_LIMIT   = 8.0    # mag, Vega
+    W2_SAT_LIMIT   = 6.7
+    W1_FAINT_LIMIT = 14.5
+    W2_FAINT_LIMIT = 13.7
 
     w1_mags = np.asarray(w1_mags, dtype=float)
     w2_mags = np.asarray(w2_mags, dtype=float)
+    times   = np.asarray(times,   dtype=float)
+    n = len(w1_mags)
 
-    w1_finite = w1_mags[np.isfinite(w1_mags)]
-    w2_finite = w2_mags[np.isfinite(w2_mags)]
+    # Per-epoch masks (aligned to input)
+    w1_fin = np.isfinite(w1_mags)
+    w2_fin = np.isfinite(w2_mags)
 
-    w1_sat_mask = w1_finite < W1_SAT_LIMIT
-    w2_sat_mask = w2_finite < W2_SAT_LIMIT
+    w1_saturated_epoch_mask  = w1_fin & (w1_mags < W1_SAT_LIMIT)
+    w2_saturated_epoch_mask  = w2_fin & (w2_mags < W2_SAT_LIMIT)
+    w1_too_faint_mask        = w1_fin & (w1_mags > W1_FAINT_LIMIT)
+    w2_too_faint_mask        = w2_fin & (w2_mags > W2_FAINT_LIMIT)
+    w1_reliable_epoch_mask   = w1_fin & ~w1_saturated_epoch_mask & ~w1_too_faint_mask
+    w2_reliable_epoch_mask   = w2_fin & ~w2_saturated_epoch_mask & ~w2_too_faint_mask
+
+    # Saturated MJDs
+    w1_saturated_mjds = times[w1_saturated_epoch_mask].tolist()
+    w2_saturated_mjds = times[w2_saturated_epoch_mask].tolist()
+
+    # W2 median on reliable epochs only
+    w2_reliable_mags = w2_mags[w2_reliable_epoch_mask]
+    w2_median_mag = float(np.median(w2_reliable_mags)) if len(w2_reliable_mags) > 0 else np.nan
+
+    any_sat = bool(w1_saturated_epoch_mask.any() or w2_saturated_epoch_mask.any())
 
     return {
-        'w1_any_saturated': bool(w1_sat_mask.any()) if len(w1_sat_mask) > 0 else False,
-        'w2_any_saturated': bool(w2_sat_mask.any()) if len(w2_sat_mask) > 0 else False,
-        'n_w1_saturated_epochs': int(w1_sat_mask.sum()),
-        'n_w2_saturated_epochs': int(w2_sat_mask.sum()),
-        'w1_min_mag': float(w1_finite.min()) if len(w1_finite) > 0 else np.nan,
-        'w2_min_mag': float(w2_finite.min()) if len(w2_finite) > 0 else np.nan,
-        'w1_median_mag': float(np.median(w1_finite)) if len(w1_finite) > 0 else np.nan,
-        'saturation_flag': (
-            'saturated' if (
-                (w1_sat_mask.any() if len(w1_sat_mask) > 0 else False) or
-                (w2_sat_mask.any() if len(w2_sat_mask) > 0 else False)
-            ) else 'clear'
-        ),
+        'w1_saturated_epoch_mask':  w1_saturated_epoch_mask,
+        'w2_saturated_epoch_mask':  w2_saturated_epoch_mask,
+        'w1_reliable_epoch_mask':   w1_reliable_epoch_mask,
+        'w2_reliable_epoch_mask':   w2_reliable_epoch_mask,
+        'w1_saturated_mjds':        w1_saturated_mjds,
+        'w2_saturated_mjds':        w2_saturated_mjds,
+        'w2_median_mag':            w2_median_mag,
+        'n_w1_saturated_epochs':    int(w1_saturated_epoch_mask.sum()),
+        'n_w2_saturated_epochs':    int(w2_saturated_epoch_mask.sum()),
+        'w1_any_saturated':         bool(w1_saturated_epoch_mask.any()),
+        'w2_any_saturated':         bool(w2_saturated_epoch_mask.any()),
+        'w1_min_mag':               float(w1_mags[w1_fin].min()) if w1_fin.any() else np.nan,
+        'w2_min_mag':               float(w2_mags[w2_fin].min()) if w2_fin.any() else np.nan,
+        'w1_median_mag':            float(np.median(w1_mags[w1_fin])) if w1_fin.any() else np.nan,
+        'saturation_flag':          'saturated' if any_sat else 'clear',
     }
 
 
@@ -1105,21 +1280,31 @@ def run_complete_wise_ingestion(results_dir: str = './results/') -> None:
                 pickle.dump(result, f, protocol=4)
             logger.debug(f"{source_id}: Saved to {pkl_path}")
 
-            # Summary row
+            # Summary row — Fix #23: include all diagnostic fields
             summary_rows.append({
-                'source_id': source_id,
-                'ra': ra,
-                'dec': dec,
-                'baseline_years': result['baseline_years'],
-                'n_epochs_total': result['n_epochs_total'],
-                'n_epochs_allsky': result['n_epochs_allsky'],
-                'n_epochs_3band': result['n_epochs_3band'],
-                'n_epochs_postcryo': result['n_epochs_postcryo'],
-                'n_epochs_neowise': result['n_epochs_neowise'],
-                'mjd_first': result['mjd_first'],
-                'mjd_last': result['mjd_last'],
-                'w1_minus_w2_median': result['w1_minus_w2_median'],
-                'rejection_reason': result.get('rejection_reason'),
+                'source_id':                    source_id,
+                'ra':                           ra,
+                'dec':                          dec,
+                'baseline_years':               result['baseline_years'],
+                'n_epochs_total':               result['n_epochs_total'],
+                'n_epochs_allsky':              result['n_epochs_allsky'],
+                'n_epochs_3band':               result['n_epochs_3band'],
+                'n_epochs_postcryo':            result['n_epochs_postcryo'],
+                'n_epochs_neowise':             result['n_epochs_neowise'],
+                'mjd_first':                    result['mjd_first'],
+                'mjd_last':                     result['mjd_last'],
+                'w1_minus_w2_median':           result['w1_minus_w2_median'],
+                'rejection_reason':             result.get('rejection_reason'),
+                # Fix #23: additional diagnostic fields
+                'baseline_years_actual':        result.get('baseline_years', np.nan),
+                'baseline_years_since_mission': result.get('baseline_years_since_mission_start', np.nan),
+                'w2_median_mag':                result.get('w2_median_mag', np.nan),
+                'saturation_flag':              result.get('saturation_flag', 'unknown'),
+                'n_w1_saturated_epochs':        result.get('n_w1_saturated_epochs', 0),
+                'n_w2_saturated_epochs':        result.get('n_w2_saturated_epochs', 0),
+                'n_sigma_clipped':              result.get('n_sigma_clipped', 0),
+                'schema_used':                  result.get('schema_used', 'unknown'),
+                'missing_quality_cols':         str(result.get('missing_quality_cols', [])),
             })
 
         except Exception as exc:
