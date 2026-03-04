@@ -1,0 +1,4 @@
+k,tp_in_top_k,total_known_clagn,recall_at_k
+10,5,10,0.500000
+20,8,10,0.800000
+50,10,10,1.000000

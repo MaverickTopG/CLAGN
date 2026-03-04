@@ -1,0 +1,143 @@
+{
+  "timestamp_utc": "2026-02-28T17:09:43.673413+00:00",
+  "score_version": "1.0",
+  "git_commit": "a1e36a5",
+  "config": {
+    "results": "data/real_clagn/benchmark_scores.csv",
+    "topn": 100000,
+    "outdir": "outputs/full_rows",
+    "score_thresh": 0.0,
+    "wise_dir": "data/wise",
+    "gaia": null,
+    "known_blazars": "known_blazars.csv",
+    "allow_missing_blazar_catalog": false,
+    "known_clagn": null,
+    "coordinates": "coordinates.csv",
+    "benchmark_master": "data/real_clagn/benchmark_master.csv",
+    "pdf": false,
+    "seed": 0,
+    "overwrite": true,
+    "skip_missing_wise": false,
+    "fetch_wise_if_missing": true,
+    "merge_master": false,
+    "master_csv": "data/real_clagn/benchmark_master.csv",
+    "summary_csv": null,
+    "master_out": "data/real_clagn/benchmark_master_augmented.csv",
+    "policy_config": "configs/pipeline_policy.yaml",
+    "t_recall": null,
+    "strict_mode": true
+  },
+  "policy": {
+    "t_recall": 0.3493918746,
+    "strict_mode_default": true,
+    "random_seed": 42,
+    "qa": {
+      "min_qual_frame": 1.0,
+      "cc_flag_clean_only": true,
+      "moon_lev_reject_min": 5,
+      "min_points_per_season": 2,
+      "min_good_points_per_season": 2,
+      "min_clean_points_total": 4,
+      "min_season_bins_total": 2
+    },
+    "gates": {
+      "hard_blazar_veto": true,
+      "require_wise_qc_pass": true,
+      "require_data_sufficient": true,
+      "state_change_ratio": {
+        "enabled": true,
+        "r_min": 0.5,
+        "eps": 0.001
+      },
+      "transient_spike": {
+        "enabled": true,
+        "peak_frac": 0.2,
+        "adjacency_frac": 0.1,
+        "min_seasons": 4
+      }
+    },
+    "tuning": {
+      "enabled": true,
+      "only_split": "dev",
+      "r_min_grid": [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0
+      ],
+      "peak_frac_grid": [
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.6
+      ],
+      "adjacency_frac_grid": [
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5
+      ],
+      "min_clean_points_total_grid": [
+        4,
+        6,
+        8,
+        10,
+        12
+      ],
+      "min_season_bins_total_grid": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "objective": "lexicographic_balanced_accuracy_recall_blazar"
+    },
+    "acceptance_targets": {
+      "recall_clagn_min": 0.8,
+      "blazar_fpr_max": 0.1,
+      "balanced_accuracy_min": 0.9
+    },
+    "evaluation": {
+      "reliability_bins": 10,
+      "recall_at_k": [
+        10,
+        20,
+        50
+      ],
+      "synthetic_prevalence_shift": [
+        0.05,
+        0.1,
+        0.2,
+        0.5
+      ]
+    }
+  },
+  "inputs": {
+    "results": "data/real_clagn/benchmark_scores.csv",
+    "results_sha256": "1f695058a35a01e75a168d29849aad1db1573caf1f932983a8f50a3c5779da96",
+    "known_blazars": "known_blazars.csv",
+    "known_blazars_sha256": "e93922c4ec2599c42970d76b97d93021a6e104cab55d1c84279e26d8c8b5c9d2",
+    "known_clagn": "data/benchmark/known_clagn.csv",
+    "known_clagn_sha256": "d4eae4b8247ff0b360c3593f1808682eeee79af3c9d986134a9895c0189bb649"
+  },
+  "selected_count": 208,
+  "skipped_count": 0,
+  "failure_count": 0,
+  "results_augmented_csv": "outputs/full_rows/benchmark_scores_augmented.csv",
+  "missing_wise_candidates": [],
+  "qa_config": {
+    "min_qual_frame": 1.0,
+    "cc_flag_clean_only": true,
+    "moon_lev_reject_min": 5,
+    "min_points_per_season": 2
+  },
+  "python": "3.13.5 (main, Sep  4 2025, 12:51:39) [Clang 16.0.0 (clang-1600.0.26.6)]",
+  "pandas": "2.3.3",
+  "numpy": "2.3.3",
+  "master_merge": null
+}

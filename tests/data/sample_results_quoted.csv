@@ -1,0 +1,3 @@
+source_id,canonical_id,score,status,n_points,baseline_days,band_coverage,rejection_reason
+"NGC 5548, nucleus",NGC 5548,0.55,OK,120,4017.75,"W1,W2",
+"Test Object",TEST_1,,NO_DATA,0,0,none,"No data returned from IRSA queries"

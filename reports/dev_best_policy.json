@@ -1,0 +1,17 @@
+{
+  "r_min": 1.5,
+  "peak_frac": 0.5,
+  "adjacency_frac": 0.3,
+  "min_clean_points_total": 10,
+  "min_season_bins_total": 4,
+  "metrics": {
+    "balanced_accuracy": 0.523960983884648,
+    "recall": 0.05555555555555555,
+    "precision": 0.6666666666666666,
+    "blazar_fpr": 0.0,
+    "tp": 2,
+    "fp": 1,
+    "fn": 34,
+    "tn": 130
+  }
+}

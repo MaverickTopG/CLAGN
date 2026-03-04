@@ -1,0 +1,18 @@
+=== reproduce_all --mode real (2026-02-24T07:08:21Z) ===
+Real benchmark build PASS
+Real benchmark split PASS
+Real CLAGN evaluation complete
+Real CLAGN evaluation complete
+Real injection-recovery complete
+Contaminant audit complete
+Selection function report complete
+Claims lint PASS
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/build_real_benchmark.py --data_dir data/real_clagn
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/split_real_benchmark.py --data_dir data/real_clagn
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_real_clagn.py --data_dir data/real_clagn --split dev --output_dir results_real
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_real_clagn.py --data_dir data/real_clagn --split test --output_dir results_real
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/run_real_injection_recovery.py --data_dir data/real_clagn --output_dir results_real
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/contaminant_audit.py --data_dir data/real_clagn --output_dir results_real
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/write_selection_function_report.py --data_dir data/real_clagn --output_dir results_real
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/claims_lint.py --output_dir results_real --benchmark_dir data/real_clagn --scan_dir data/real_clagn/paper
+[reproduce] complete

@@ -1,0 +1,31 @@
+{
+  "split_hash": "cf3649737e4cb1e0808d34b8d8d5656692ce8cd1bcbd70c93c5bc264b5f17769",
+  "counts": {
+    "dev": {
+      "sn": 53,
+      "star": 52,
+      "normal_agn": 49,
+      "clagn": 40,
+      "blazar": 29
+    },
+    "test": {
+      "normal_agn": 16,
+      "star": 13,
+      "sn": 12,
+      "clagn": 10,
+      "blazar": 5
+    }
+  },
+  "y_true_counts": {
+    "dev": {
+      "0": 183,
+      "1": 40
+    },
+    "test": {
+      "0": 46,
+      "1": 10
+    }
+  },
+  "timestamp_utc": "2026-03-01T09:31:37.579853+00:00",
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242"
+}

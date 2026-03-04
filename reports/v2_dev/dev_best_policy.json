@@ -1,0 +1,20 @@
+{
+  "r_min": 3.0,
+  "peak_frac": 0.6,
+  "adjacency_frac": 0.2,
+  "min_clean_points_total": 4,
+  "min_season_bins_total": 2,
+  "cross_validated": false,
+  "cv_n_splits": null,
+  "metrics": {
+    "balanced_accuracy": 0.8806191687871077,
+    "cv_balanced_accuracy": null,
+    "recall": 0.9444444444444444,
+    "precision": 0.5862068965517241,
+    "blazar_fpr": 0.0,
+    "tp": 34,
+    "fp": 24,
+    "fn": 2,
+    "tn": 107
+  }
+}

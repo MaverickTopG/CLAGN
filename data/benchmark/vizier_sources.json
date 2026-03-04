@@ -1,0 +1,59 @@
+{
+  "known_clagn": [],
+  "known_contaminants": [
+    {
+      "catalog": "B/sn",
+      "columns": {"RAJ2000": "ra", "DEJ2000": "dec", "SN": "name"},
+      "fixed": {"contaminant_type": "sn_in_host", "reference": "Asiago SN Catalog (B/sn)", "notes": "Asiago SN catalog"},
+      "row_limit": 50
+    },
+    {
+      "catalog": "VII/274/bzcat5",
+      "columns": {"RAJ2000": "ra", "DEJ2000": "dec", "Name": "name", "z": "redshift"},
+      "fixed": {"contaminant_type": "blazar", "reference": "Roma-BZCAT (VII/274)", "notes": "BZCAT blazar catalog"},
+      "row_limit": 100
+    },
+    {
+      "catalog": "I/358/varisum",
+      "columns": {"RA_ICRS": "ra", "DE_ICRS": "dec", "Source": "name"},
+      "fixed": {"contaminant_type": "variable_star", "reference": "Gaia DR3 varisum (I/358/varisum)", "notes": "Gaia DR3 variable stars"},
+      "row_limit": 100
+    },
+    {
+      "catalog": "VII/289/dr16q",
+      "columns": {"RAJ2000": "ra", "DEJ2000": "dec", "SDSS": "name", "z": "redshift"},
+      "fixed": {"contaminant_type": "normal_agn", "reference": "SDSS DR16Q (VII/289)", "notes": "SDSS DR16Q normal AGN"},
+      "row_limit": 50,
+      "regions": [
+        {"ra": 0, "dec": 0, "radius_deg": 6},
+        {"ra": 60, "dec": 10, "radius_deg": 6},
+        {"ra": 120, "dec": -10, "radius_deg": 6},
+        {"ra": 180, "dec": 20, "radius_deg": 6},
+        {"ra": 240, "dec": -20, "radius_deg": 6},
+        {"ra": 300, "dec": 30, "radius_deg": 6}
+      ]
+    }
+  ],
+  "normal_agn_control": [
+    {
+      "catalog": "VII/289/dr16q",
+      "columns": {"RAJ2000": "ra", "DEJ2000": "dec", "SDSS": "name", "z": "redshift"},
+      "fixed": {"reference": "SDSS DR16Q (VII/289)"},
+      "row_limit": 50,
+      "regions": [
+        {"ra": 0, "dec": 0, "radius_deg": 8},
+        {"ra": 30, "dec": 10, "radius_deg": 8},
+        {"ra": 60, "dec": -10, "radius_deg": 8},
+        {"ra": 90, "dec": 20, "radius_deg": 8},
+        {"ra": 120, "dec": -20, "radius_deg": 8},
+        {"ra": 150, "dec": 30, "radius_deg": 8},
+        {"ra": 180, "dec": -30, "radius_deg": 8},
+        {"ra": 210, "dec": 40, "radius_deg": 8},
+        {"ra": 240, "dec": -40, "radius_deg": 8},
+        {"ra": 270, "dec": 50, "radius_deg": 8},
+        {"ra": 300, "dec": -50, "radius_deg": 8},
+        {"ra": 330, "dec": 60, "radius_deg": 8}
+      ]
+    }
+  ]
+}

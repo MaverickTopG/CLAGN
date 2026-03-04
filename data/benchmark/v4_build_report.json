@@ -1,0 +1,122 @@
+{
+  "ingest_counts": {
+    "real_benchmark": 279,
+    "known_clagn": 60,
+    "known_contaminants": 176,
+    "normal_agn_control": 305,
+    "benchmark_master_v3": 156950,
+    "dr16q_vizier": 120000,
+    "milliquas_vizier": 199946,
+    "bzcat5": 0,
+    "4fgl_dr4": 3577,
+    "osc_iin": 0,
+    "osc_iip": 0,
+    "osc_ia": 0,
+    "osc_ib": 0,
+    "osc_ic": 0,
+    "osc_iib": 0,
+    "osc_ibn": 0,
+    "osc_slsn": 0,
+    "osc_lbv": 0,
+    "expansion_sn": 24,
+    "expansion_blazar": 32,
+    "expansion_star": 239,
+    "expansion_agn": 3288,
+    "expansion_clagn": 25
+  },
+  "dedup_stats": {
+    "rows_before_dedup": 484901,
+    "rows_after_exact_dedup": 331394,
+    "rows_after_coord_dedup": 330585,
+    "exact_removed": 153507,
+    "coord_removed": 809
+  },
+  "eval": {
+    "available_by_class": {
+      "clagn": 113,
+      "normal_agn": 323352,
+      "blazar": 3639,
+      "sn": 91,
+      "star": 355
+    },
+    "target_per_class": {
+      "clagn": 91,
+      "normal_agn": 91,
+      "blazar": 91,
+      "sn": 91,
+      "star": 91
+    },
+    "final_per_class": {
+      "blazar": 91,
+      "clagn": 91,
+      "normal_agn": 91,
+      "sn": 91,
+      "star": 91
+    },
+    "underfill_rebalanced": true,
+    "literature_floor": 250,
+    "deficits": {
+      "clagn": 137,
+      "normal_agn": 0,
+      "blazar": 0,
+      "sn": 159,
+      "star": 0
+    },
+    "eval_mode": "gold_plus",
+    "eligible_provenance_groups": [
+      "LIT_STRONG",
+      "LIT_MEDIUM",
+      "CATALOG_HIGHCONF"
+    ]
+  },
+  "discovery": {
+    "available_by_label": {
+      "normal_agn": 323261,
+      "blazar": 6583,
+      "star": 264,
+      "clagn": 22
+    },
+    "desired_targets": {
+      "normal_agn": 127500,
+      "blazar": 12000,
+      "sn": 4500,
+      "star": 4500,
+      "clagn": 1500
+    },
+    "actual_targets": {
+      "clagn": 22,
+      "sn": 0,
+      "star": 264,
+      "blazar": 6583,
+      "normal_agn": 127500
+    },
+    "final_total": 150000,
+    "final_by_label": {
+      "normal_agn": 143131,
+      "blazar": 6583,
+      "star": 264,
+      "clagn": 22
+    }
+  },
+  "files": {
+    "eval_master": "data/benchmark/benchmark_eval_master_v4.csv",
+    "eval_train": "data/benchmark/benchmark_eval_train_v4.csv",
+    "eval_dev": "data/benchmark/benchmark_eval_dev_v4.csv",
+    "eval_test": "data/benchmark/benchmark_eval_test_v4.csv",
+    "discovery_master": "data/benchmark/benchmark_discovery_master_v4.csv",
+    "provenance_audit": "data/benchmark/v4_provenance_audit.csv",
+    "split_hash": "data/benchmark/v4_split_hash.json"
+  },
+  "config": {
+    "eval_target_total": 3000,
+    "discovery_target_total": 150000,
+    "seed": 42,
+    "dedup_radius_arcsec": 5.0,
+    "eval_mode": "gold_plus",
+    "policy_eval_provenance": [
+      "LIT_STRONG",
+      "LIT_MEDIUM",
+      "CATALOG_HIGHCONF"
+    ]
+  }
+}

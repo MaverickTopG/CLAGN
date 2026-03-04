@@ -1,0 +1,1 @@
+rows=279 | ok=207 | rejected=72 | coverage=0.742 | strict_coverage=0.677 | duplicate_canonical_ids=0 | id_mismatches=31 | ambiguous_ids=5 | baseline_bad=0 | missing_score=72 | top_candidate=4645750160709248 (0.8422) | outdir=outputs

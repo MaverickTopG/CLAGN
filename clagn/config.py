@@ -282,12 +282,16 @@ RUWE_SOFT_FLAG         = 1.4     # Flag for review; hard-reject only with corrob
 
 # Sensitivity analysis parameters (config-H2)
 SENSITIVITY_THRESHOLDS_TO_TEST = {
-    'MIN_BASELINE_YEARS':    [5.0, 7.0, 10.0],
-    'MIN_REDSHIFT':          [0.002, 0.005, 0.01],
-    'SIGMA_CLIP_SIGMA':      [3.5, 4.0, 5.0],
-    'MIN_DELTA_MAG':         [0.2, 0.3, 0.4],
-    'MIN_EPOCHS_PER_SEASON': [2, 3, 5],
-    # Run sensitivity_test.py before paper submission
+    'MIN_BASELINE_YEARS':       [5.0, 7.0, 10.0],
+    'MIN_REDSHIFT':             [0.002, 0.005, 0.01],
+    'SIGMA_CLIP_SIGMA':         [3.5, 4.0, 5.0],
+    'MIN_DELTA_MAG':            [0.2, 0.3, 0.4, 0.5],
+    'MIN_EPOCHS_PER_SEASON':    [2, 3, 5],
+    'MIN_SEASONS_REQUIRED':     [3, 4, 5],
+    'GAIA_SEARCH_RADIUS_ARCSEC':[1.0, 1.5, 2.0],
+    'MAX_PARALLAX_SIG':         [2.0, 3.0, 5.0],
+    'operating_threshold':      [0.3, 0.4, 0.5, 0.6],
+    # Run sensitivity_analysis.py before paper submission
 }
 
 # ---------------------------------------------------------------------------
@@ -441,6 +445,16 @@ FP_SN_SCORE_PENALTY       = 0.70   # Multiplicative penalty for SN-like events
 FP_STELLAR_SCORE_PENALTY  = 0.50   # Multiplicative penalty for possible stellar contaminants
 FP_HOST_SCORE_PENALTY     = 0.50   # Multiplicative penalty for host-contaminated marginal sources
 FP_ARTIFACT_SCORE_PENALTY = 0.30   # Multiplicative penalty for single-epoch-driven variability
+
+# Contaminant war plan penalties (Part 5)
+FP_SN_MORPH_PENALTY       = 0.50   # SN-like morphology without catalog match
+FP_SN_XMATCH_PENALTY      = 0.00   # Known SN catalog match → reject (score→0)
+FP_BLAZAR_SCORE_PENALTY   = 0.30   # Blazar / radio-loud penalty
+FP_DUST_SCORE_PENALTY     = 0.70   # Dust obscuration signature penalty
+
+# Transient crossmatch windows
+TRANSIENT_XMATCH_RADIUS_ARCSEC = 2.0
+TRANSIENT_XMATCH_MAX_DT_DAYS   = 730.0  # 2 years
 
 # Quasar probability threshold below which sources in the Galactic plane are suspect
 FP_LOW_QUASAR_PROB = 0.10
@@ -600,6 +614,8 @@ def delta_mag_from_fluxes(F_early, F_late):
 # --- Literature-derived thresholds ---
 # Ricci & Trakhtenbrot 2022 (arXiv:2211.05132): min amplitude for CLAGN
 CLAGN_MIN_DELTA_MAG = 0.3          # mag; |delta_mag| >= 0.3 for CLAGN candidacy
+# Alias used in sensitivity sweeps
+MIN_DELTA_MAG = CLAGN_MIN_DELTA_MAG
 # Stern et al. 2012 (ApJ 753 30): AGN wedge W1-W2 color cut (Vega)
 CLAGN_W1_W2_AGN_MIN = 0.8          # W1-W2 Vega mag
 # Kozlowski et al. 2017 (arXiv:1611.08248): DRW reliability baseline criterion

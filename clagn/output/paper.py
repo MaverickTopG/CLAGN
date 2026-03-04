@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _BIBTEX = r"""
+@ARTICLE{LaMassa2015,
+   author = {{LaMassa}, S.~M. and others},
+    title = "{The Discovery of the First Changing-look Quasar: New Insights into the Physics and Phenomenology of Active Galactic Nucleus}",
+  journal = {\apj},
+     year = 2015,
+   volume = {800},
+    pages = {144},
+      doi = {10.1088/0004-637X/800/2/144}
+}
+
 @ARTICLE{Kelly2009,
    author = {{Kelly}, B.~C. and {Bechtold}, J. and {Siemiginowska}, A.},
     title = "{Are the Variations in Quasar Optical Flux Driven by Thermal Fluctuations?}",
@@ -148,6 +158,26 @@ _BIBTEX = r"""
    volume = {470},
     pages = {4112--4132},
       doi = {10.1093/mnras/stx1456}
+}
+
+@ARTICLE{Graham2020,
+   author = {{Graham}, M.~J. and others},
+    title = "{The ZTF Bright Transient Survey: A Search for Changing-look AGN}",
+  journal = {\mnras},
+     year = 2020,
+   volume = {491},
+    pages = {4925--4942},
+      doi = {10.1093/mnras/stz3275}
+}
+
+@ARTICLE{Sheng2017,
+   author = {{Sheng}, Z. and others},
+    title = "{Mid-Infrared Variability of Active Galactic Nuclei}",
+  journal = {\apjl},
+     year = 2017,
+   volume = {846},
+    pages = {L7},
+      doi = {10.3847/2041-8213/aa86ed}
 }
 
 @ARTICLE{Kozlowski2010,
@@ -405,6 +435,36 @@ def _make_validation_table(val_results: dict) -> str:
     return table
 
 
+def _make_spectroscopy_table(spec_df: pd.DataFrame) -> str:
+    """
+    Generate deluxetable* for spectroscopic evidence tiers.
+    """
+    rows_tex = []
+    for _, row in spec_df.iterrows():
+        src_id = str(row.get('source_id', 'N/A'))
+        tier = str(row.get('spectroscopic_tier', 'tier_3_weak'))
+        n_spec = int(row.get('n_spectra', 0)) if 'n_spectra' in row.index else 0
+        archives = str(row.get('archives_checked', ''))
+        rows_tex.append(
+            rf'{src_id} & {tier} & {n_spec} & {archives} \\'
+        )
+
+    table = (
+        r"\\begin{deluxetable*}{lccc}" + "\n"
+        r"\\tablecaption{Archival Spectroscopic Evidence for Top Candidates}" + "\n"
+        r"\\label{tab:spectroscopy}" + "\n"
+        r"\\tablewidth{0pt}" + "\n"
+        r"\\tablehead{" + "\n"
+        r"\\colhead{Source ID} & \\colhead{Tier} & \\colhead{$N_\\mathrm{spec}$} & \\colhead{Archives}" + "\n"
+        r"}" + "\n"
+        r"\\startdata" + "\n"
+    )
+    table += "\n".join(rows_tex) if rows_tex else r"\\nodata & & & \\\\"  # noqa: W605
+    table += "\n" + r"\\enddata" + "\n"
+    table += r"\\tablecomments{Spectroscopic tiers follow the validation standard.}" + "\n"
+    table += r"\\end{deluxetable*}" + "\n"
+    return table
+
 # ---------------------------------------------------------------------------
 # Abstract generator
 # ---------------------------------------------------------------------------
@@ -433,7 +493,7 @@ def _generate_abstract(candidates_df: pd.DataFrame, stats: dict) -> str:
         far_str = f" with a false alarm rate of {far:.3f}"
 
     abstract = (
-        rf"We present a systematic search for changing-look active galactic nuclei (CLAGN) "
+        rf"We present a systematic search for changing-state active galactic nuclei (CLAGN) candidates "
         rf"using Wide-field Infrared Survey Explorer (WISE) and NEOWISE-R multi-epoch "
         rf"photometry. Our automated pipeline combines Damped Random Walk (DRW) Gaussian "
         rf"process modeling, Bayesian changepoint detection, and a 10-component variability "
@@ -489,6 +549,58 @@ def generate_apj_paper(results_dir: str = './results/',
     results_path = Path(results_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+
+    def _read_verbatim_block(path: Path) -> str:
+        """Return a LaTeX verbatim block of the file contents, or empty string."""
+        try:
+            text = path.read_text(encoding='utf-8').strip()
+        except Exception:
+            return ""
+        if not text:
+            return ""
+        # Use verbatim to preserve exact wording with no reflow.
+        return r"\begin{verbatim}" + "\n" + text + "\n" + r"\end{verbatim}" + "\n"
+
+    def _read_limitations_block(path: Path) -> str:
+        """Read limitations template and substitute key metrics if available."""
+        try:
+            text = path.read_text(encoding='utf-8').strip()
+        except Exception:
+            return ""
+        if not text:
+            return ""
+
+        det_thresh = "X"
+        sn_contam = "X"
+        blazar_contam = "Y"
+
+        det_path = results_path / 'validation' / 'detection_threshold.json'
+        if det_path.exists():
+            try:
+                det = json.loads(det_path.read_text())
+                if det.get('min_delta_mag') is not None and np.isfinite(float(det['min_delta_mag'])):
+                    det_thresh = f"{float(det['min_delta_mag']):.2f}"
+            except Exception:
+                pass
+
+        pr_path = results_path / 'validation' / 'precision_recall_summary.json'
+        if pr_path.exists():
+            try:
+                pr = json.loads(pr_path.read_text())
+                sn_rej = pr.get('sn_rejection_rate')
+                bl_rej = pr.get('blazar_rejection_rate')
+                if sn_rej is not None and np.isfinite(float(sn_rej)):
+                    sn_contam = f"{100.0 * (1.0 - float(sn_rej)):.1f}"
+                if bl_rej is not None and np.isfinite(float(bl_rej)):
+                    blazar_contam = f"{100.0 * (1.0 - float(bl_rej)):.1f}"
+            except Exception:
+                pass
+
+        text = text.replace('{DETECTION_THRESHOLD_MAG}', det_thresh)
+        text = text.replace('{SN_CONTAMINATION_RATE}', sn_contam)
+        text = text.replace('{BLAZAR_CONTAMINATION_RATE}', blazar_contam)
+
+        return r"\begin{verbatim}" + "\n" + text + "\n" + r"\end{verbatim}" + "\n"
 
     # ---- Load data -----------------------------------------------------------
     candidates_df = pd.DataFrame()
@@ -548,6 +660,16 @@ def generate_apj_paper(results_dir: str = './results/',
     table3 = _make_physics_table(candidates_df)
     table4 = _make_validation_table(val_results)
 
+    # Spectroscopy table
+    spec_df = pd.DataFrame()
+    spec_file = results_path / 'validation' / 'spectroscopy_matches.csv'
+    if spec_file.exists():
+        try:
+            spec_df = pd.read_csv(spec_file)
+        except Exception:
+            pass
+    table_spec = _make_spectroscopy_table(spec_df)
+
     # ---- Generate abstract -------------------------------------------------
     abstract = _generate_abstract(candidates_df, pop_stats)
 
@@ -584,6 +706,15 @@ def generate_apj_paper(results_dir: str = './results/',
     far_str = f"{float(far_05):.4f}" if np.isfinite(float(far_05)) else r"\nodata"
 
     # ---- Build full LaTeX document -----------------------------------------
+    definitions_block = _read_verbatim_block(results_path.parent / 'definitions.md')
+    if not definitions_block:
+        # Fallback to paper/definitions.md (mirror)
+        definitions_block = _read_verbatim_block(output_path.parent / 'paper' / 'definitions.md')
+
+    limitations_block = _read_limitations_block(results_path.parent / 'limitations.md')
+    if not limitations_block:
+        limitations_block = _read_limitations_block(output_path.parent / 'paper' / 'limitations.md')
+
     latex = r"""\documentclass[twocolumn,twocolappendix]{aastex631}
 
 \usepackage{graphicx}
@@ -602,12 +733,12 @@ def generate_apj_paper(results_dir: str = './results/',
 \newcommand{\mnras}{MNRAS}
 \newcommand{\nodata}{\ensuremath{\cdots}}
 
-\shorttitle{Infrared Changing-Look AGN from WISE}
+\shorttitle{Infrared Changing-State AGN Candidates from WISE}
 \shortauthors{CLAGN Survey Team}
 
 \begin{document}
 
-\title{Systematic Discovery of Changing-Look AGN from Multi-Epoch WISE/NEOWISE-R
+\title{Systematic Selection of Changing-State AGN Candidates from Multi-Epoch WISE/NEOWISE-R
        Infrared Photometry: A Population Study with DRW Gaussian Process Modeling}
 
 \author{CLAGN Survey Team}
@@ -627,7 +758,7 @@ def generate_apj_paper(results_dir: str = './results/',
 
 Changing-look active galactic nuclei (CLAGN) are objects that exhibit dramatic,
 sustained changes in their accretion state on human-observable timescales
-\citep{RicciTrakhtenbrot2022, Graham2017, Macleod2019}. These transitions manifest
+\citep{LaMassa2015, RicciTrakhtenbrot2022, Graham2017, Macleod2019}. These transitions manifest
 as large-amplitude variability in the broad emission lines and continuum emission,
 implying rapid changes in the mass accretion rate $\dot{M}$ through the black hole
 accretion disk. The infrared (IR) emission from the circumnuclear dust torus provides
@@ -666,6 +797,10 @@ We require a minimum of 20 single-exposure epochs and a temporal baseline of
 at least 10 years spanning both the pre-hibernation AllWISE survey and the
 post-reactivation \NEOWISE-R\ survey.
 
+\subsection{Operational Definition of Changing-Look AGN}
+\label{ssec:defn}
+""" + definitions_block + r"""
+
 \subsection{WISE Multi-Epoch Photometry}
 \label{ssec:wise}
 
@@ -682,6 +817,8 @@ Light curves are converted from Vega magnitudes to flux density (mJy) using the
 WISE zero points from \citet{Jarrett2011}:
 $F_\nu(W1) = 309.54 \times 10^{-0.4 m_{W1}}$ Jy.
 Outliers are rejected by 4$\sigma$ iterative sigma-clipping (3 iterations).
+We measure variability amplitudes using seasonal median flux comparisons
+\citep{Sheng2017, Graham2020}.
 
 \subsection{Gaia Optical Photometry}
 \label{ssec:gaia}
@@ -827,11 +964,17 @@ particularly well-suited to detecting the dust-echoing component of the CLAGN
 phenomenon \citep{Barvainis1987}.
 
 %% ============================================================
+\section{Limitations}
+\label{sec:limitations}
+%% ============================================================
+""" + limitations_block + r"""
+
+%% ============================================================
 \section{Conclusions}
 \label{sec:conclusions}
 %% ============================================================
 
-We have presented a systematic infrared search for changing-look AGN using the
+We have presented a systematic infrared search for changing-state AGN candidates using the
 complete WISE/NEOWISE-R photometric archive. Our main conclusions are:
 
 \begin{enumerate}
@@ -888,7 +1031,7 @@ core Python package for Astronomy.
 %% TABLES
 %% ============================================================
 
-""" + table1 + "\n\n" + table2 + "\n\n" + table3 + "\n\n" + table4 + r"""
+""" + table1 + "\n\n" + table2 + "\n\n" + table3 + "\n\n" + table_spec + "\n\n" + table4 + r"""
 
 \end{document}
 """

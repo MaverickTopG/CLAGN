@@ -1,0 +1,15 @@
+{
+  "sha256": "ad49aeb1a4ccdd978b14b70bcac85c0c16989a981097fa65a6ef7bedcdf46474",
+  "benchmark_hash": "ad49aeb1a4ccdd978b14b70bcac85c0c16989a981097fa65a6ef7bedcdf46474",
+  "row_count_total": 279,
+  "row_count_per_class": {
+    "sn": 65,
+    "star": 65,
+    "normal_agn": 65,
+    "clagn": 50,
+    "blazar": 34
+  },
+  "y_true_positive_count": 50,
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "timestamp_utc": "2026-02-27T05:21:44.280558+00:00"
+}

@@ -1,0 +1,14 @@
+{
+  "catalogs": [
+    {
+      "name": "gaia",
+      "cache_path": "cache/crossmatch/gaia.csv",
+      "queried_count": 50
+    },
+    {
+      "name": "wise",
+      "cache_path": "cache/crossmatch/wise.csv",
+      "queried_count": 50
+    }
+  ]
+}

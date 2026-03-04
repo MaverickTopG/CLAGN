@@ -1,0 +1,10 @@
+class,feature,q25,q50,q75,min,max
+normal_agn,state_change_ratio_value,5.803922,6.218130,8.497006,5.672414,12.067416
+normal_agn,transient_max_adjacency_ratio,0.379079,0.904025,0.920746,0.171348,0.992701
+normal_agn,transient_max_nonpeak_ratio,0.920746,0.970588,0.978887,0.584270,0.992701
+sn,state_change_ratio_value,6.495101,9.421053,12.712325,3.726562,16.575000
+sn,transient_max_adjacency_ratio,0.479304,0.635762,0.775426,0.183983,0.934746
+sn,transient_max_nonpeak_ratio,0.914964,0.934746,0.951421,0.618478,0.974977
+star,state_change_ratio_value,4.099629,5.275894,6.023057,2.868805,13.133531
+star,transient_max_adjacency_ratio,0.648245,0.776876,0.928942,0.166667,0.986987
+star,transient_max_nonpeak_ratio,0.855944,0.938157,0.958782,0.697674,0.986987

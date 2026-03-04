@@ -1,0 +1,8 @@
+{
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "config_hash": "261b2a741705f638c674db30dbf22a8db120ec05b8d51fc010151598680995b9",
+  "benchmark_hash": "72eacd28d9bef06e8fc439d6b71a8bafc2ac63f864ec31b41c0e153b965dcfd8",
+  "created_utc": "2026-02-27T05:21:42.754048+00:00",
+  "split": "test",
+  "output_path": "results_real/roc_curve.png"
+}

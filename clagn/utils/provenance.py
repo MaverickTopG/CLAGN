@@ -11,6 +11,7 @@ import json
 import datetime
 import subprocess
 import sys
+from importlib import metadata
 
 import numpy as np
 
@@ -18,92 +19,71 @@ from clagn import config
 
 
 def get_git_hash():
-    """Return short git commit hash, or 'unknown' if git is unavailable."""
+    """Return git commit hash, or 'unavailable' if git is unavailable."""
     try:
         return subprocess.check_output(
-            ['git', 'rev-parse', '--short', 'HEAD'],
+            ['git', 'rev-parse', 'HEAD'],
             stderr=subprocess.DEVNULL
         ).decode().strip()
     except Exception:
-        return 'unknown'
+        return 'unavailable'
 
 
-def write_provenance_sidecar(output_csv_path, pipeline_config):
+def get_git_describe():
+    """Return git describe --tags, or 'unavailable'."""
+    try:
+        return subprocess.check_output(
+            ['git', 'describe', '--tags', '--always'],
+            stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        return 'unavailable'
+
+
+def _pkg_version(name: str) -> str:
+    try:
+        return metadata.version(name)
+    except Exception:
+        return 'unavailable'
+
+
+def write_provenance_sidecar(output_csv_path, config_module=config,
+                             results_summary=None, pipeline_args=None,
+                             operating_threshold=None, wise_tables_queried=None,
+                             random_seed=None, irsa_api_version=None):
     """
     Write a JSON sidecar next to every output CSV.
 
     Example: top_candidates.csv → top_candidates_provenance.json
-
-    Parameters
-    ----------
-    output_csv_path : str or Path
-        Path to the output CSV file.
-    pipeline_config : dict
-        Pipeline configuration (e.g. vars(args) from argparse).
-
-    Returns
-    -------
-    sidecar_path : str
-        Path to the written JSON sidecar.
     """
+    results_summary = results_summary or {}
+    pipeline_args = pipeline_args or {}
+
     provenance = {
-        'generated_at': datetime.datetime.utcnow().isoformat() + 'Z',
-        'git_commit': get_git_hash(),
+        'pipeline_version': get_git_describe(),
+        'git_hash': get_git_hash(),
+        'run_timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+        'config_snapshot': {k: v for k, v in vars(config_module).items() if not k.startswith('_')},
         'python_version': sys.version,
-
-        # All threshold values that affect results
-        'thresholds': {
-            'min_baseline_years': pipeline_config.get('min_baseline_years', 10.0),
-            'min_epochs': pipeline_config.get('min_epochs', 20),
-            'min_delta_mag': pipeline_config.get('min_delta_mag', 0.3),
-            'min_changepoint_bic': pipeline_config.get('min_changepoint_bic', 6.0),
-            'min_drw_nonstat_sigma': pipeline_config.get('min_drw_nonstat_sigma', 2.0),
-            'gaia_max_pm_sig': 3.0,
-            'gaia_max_parallax_sig': 3.0,
-            'gaia_max_ruwe': 1.4,
-            'wise_min_snr': 5.0,
-            'wise_season_anchor_mjd': config.WISE_SEASON_ANCHOR_MJD,
+        'key_package_versions': {
+            'numpy': _pkg_version('numpy'),
+            'scipy': _pkg_version('scipy'),
+            'astropy': _pkg_version('astropy'),
+            'celerite2': _pkg_version('celerite2'),
+            'emcee': _pkg_version('emcee'),
         },
-
-        # All physical constants used
-        'constants': {
-            'wise_w1_zero_point_jy': config.WISE_VEGA_ZERO_POINTS['W1'],
-            'wise_w2_zero_point_jy': config.WISE_VEGA_ZERO_POINTS['W2'],
-            'wise_hibernation_start_mjd': config.WISE_HIBERNATION_MJD_START,
-            'wise_hibernation_end_mjd': config.WISE_HIBERNATION_MJD_END,
-        },
-
-        # Scoring weights
-        'scoring_weights': {
-            'w_amplitude': 3.0,
-            'w_temporal': 3.0,
-            'w_color': 2.0,
-            'w_statistical': 1.5,
-            'w_astrometric': 0.5,
-            'scoring_version': 'v3_no_double_counting',
-        },
-
-        # DRW configuration
-        'drw': {
-            'backend': 'celerite2_with_numpy_fallback',
-            'fit_in_flux_space': True,
-            'mean_subtracted_before_fit': True,
-            'rest_frame_correction_applied': True,
-            'kozlowski2017_reliability_check': True,
-        },
-
-        # Delta-mag method
-        'delta_mag': {
-            'method': 'seasonal_weighted_mean_flux_comparison',
-            'season_anchor_mjd': config.WISE_SEASON_ANCHOR_MJD,
-            'sign_convention': 'positive_is_brightening',
-            'early_seasons': 'first_2',
-            'late_seasons': 'last_2',
-        },
+        'random_seed': random_seed,
+        'n_sources_input': results_summary.get('n_sources_input'),
+        'n_sources_output': results_summary.get('n_sources_output'),
+        'operating_threshold': operating_threshold,
+        'wise_tables_queried': wise_tables_queried or [],
+        'irsa_api_version': irsa_api_version or 'unavailable',
+        'results_summary': results_summary,
+        'pipeline_args': pipeline_args,
     }
 
     sidecar_path = str(output_csv_path).replace('.csv', '_provenance.json')
     with open(sidecar_path, 'w') as f:
-        json.dump(provenance, f, indent=2)
+        json.dump(provenance, f, indent=2, default=str)
 
     return sidecar_path

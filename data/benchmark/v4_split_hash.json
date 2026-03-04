@@ -1,0 +1,19 @@
+{
+  "seed": 42,
+  "train": {
+    "rows": 318,
+    "sha256": "4bf5891efed4d6f33752a3785bc7e697596b81ee33c14232e376a1f057e76cbf"
+  },
+  "dev": {
+    "rows": 68,
+    "sha256": "814f219bb9fb86e42954de4ec898620c473f630ce25bf17cf4940c6815d45dd1"
+  },
+  "test": {
+    "rows": 69,
+    "sha256": "9cacbe870140833f42fee13556a0b864ff6c8efe179fd44d976afc78840486bf"
+  },
+  "master": {
+    "rows": 455,
+    "sha256": "c16cf255cc1ec1ba189f43c97a0352bca97998a002e3b8cce552339097ec2d18"
+  }
+}

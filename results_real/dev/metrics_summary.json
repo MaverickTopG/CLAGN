@@ -1,0 +1,50 @@
+{
+  "split": "dev",
+  "join_key": "canonical_id",
+  "n_rows_joined": 223,
+  "n_rows_used_for_metrics": 167,
+  "known_clagn_status_ok": 36,
+  "known_clagn_total_joined": 40,
+  "required_known_clagn_status_ok": 20,
+  "known_clagn_excluded_non_ok": 4,
+  "known_clagn_status_summary": {
+    "OK": 36,
+    "TOO_FEW_POINTS": 3,
+    "NO_DATA": 1
+  },
+  "contaminant_status_summary": {
+    "OK": 131,
+    "TOO_FEW_POINTS": 51,
+    "NO_DATA": 1
+  },
+  "threshold": 0.349391874599012,
+  "precision": 0.3953488372093023,
+  "recall": 0.9444444444444444,
+  "f1": 0.5573770491803278,
+  "auc_pr": 0.43607733369122154,
+  "auc_roc": 0.8011026293469041,
+  "ci_precision": [
+    0.28902647627547223,
+    0.5
+  ],
+  "ci_recall": [
+    0.8786931818181818,
+    1.0
+  ],
+  "ci_f1": [
+    0.43630360205831903,
+    0.6578165211686935
+  ],
+  "ci_auc_pr": [
+    0.3008262037858101,
+    0.599622047475331
+  ],
+  "ci_auc_roc": [
+    0.7192693080076982,
+    0.8790967096452709
+  ],
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "config_hash": "261b2a741705f638c674db30dbf22a8db120ec05b8d51fc010151598680995b9",
+  "benchmark_hash": "72eacd28d9bef06e8fc439d6b71a8bafc2ac63f864ec31b41c0e153b965dcfd8",
+  "created_utc": "2026-02-27T05:21:39.491409+00:00"
+}

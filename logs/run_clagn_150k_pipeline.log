@@ -1,0 +1,140 @@
+=== PART 0: PREFLIGHT ===
+Python module check PASS
+Verifying IRSA connectivity...
+IRSA OK, got 0 rows
+=== PART 1: DOWNLOADS (continue on single-step failure) ===
+[2026-03-02T07:55:44Z] START 1.1_milliquas_vizier
+[2026-03-02T07:56:10Z] OK    1.1_milliquas_vizier
+[2026-03-02T07:56:10Z] START 1.2_bzcat5
+[2026-03-02T07:56:12Z] OK    1.2_bzcat5
+[2026-03-02T07:56:12Z] START 1.3_4fgl_dr4
+[2026-03-02T07:56:18Z] OK    1.3_4fgl_dr4
+[2026-03-02T07:56:18Z] START 1.4_macleod2019
+[2026-03-02T07:56:20Z] OK    1.4_macleod2019
+[2026-03-02T07:56:20Z] START 1.5_sheng2020
+[2026-03-02T07:56:21Z] OK    1.5_sheng2020
+[2026-03-02T07:56:21Z] START 1.6_hon2022
+[2026-03-02T07:56:23Z] OK    1.6_hon2022
+[2026-03-02T07:56:23Z] START 1.7_osc_IIn
+[2026-03-02T07:56:24Z] OK    1.7_osc_IIn
+[2026-03-02T07:56:24Z] START 1.7_osc_IIP
+[2026-03-02T07:56:26Z] OK    1.7_osc_IIP
+[2026-03-02T07:56:26Z] START 1.7_osc_Ia
+[2026-03-02T07:56:28Z] OK    1.7_osc_Ia
+[2026-03-02T07:56:28Z] START 1.7_osc_Ib
+[2026-03-02T07:56:29Z] OK    1.7_osc_Ib
+[2026-03-02T07:56:29Z] START 1.7_osc_Ic
+[2026-03-02T07:56:31Z] OK    1.7_osc_Ic
+[2026-03-02T07:56:31Z] START 1.7_osc_IIb
+[2026-03-02T07:56:32Z] OK    1.7_osc_IIb
+[2026-03-02T07:56:32Z] START 1.7_osc_SLSN
+[2026-03-02T07:56:34Z] OK    1.7_osc_SLSN
+[2026-03-02T07:56:34Z] START 1.7_osc_LBV
+[2026-03-02T07:56:35Z] OK    1.7_osc_LBV
+[2026-03-02T07:56:35Z] START 1.7_osc_Ibn
+[2026-03-02T07:56:37Z] OK    1.7_osc_Ibn
+[2026-03-02T07:56:37Z] START 1.7_osc_verify
+[2026-03-02T07:56:37Z] OK    1.7_osc_verify
+[2026-03-02T07:56:37Z] START 1.8_dr16q_vizier
+[2026-03-02T07:56:43Z] OK    1.8_dr16q_vizier
+[2026-03-02T07:56:43Z] START 1.9_crts_agn
+[2026-03-02T07:56:45Z] OK    1.9_crts_agn
+[2026-03-02T07:56:45Z] START 1.10_ward2024
+[2026-03-02T07:56:46Z] OK    1.10_ward2024
+=== PART 2: INGESTION ===
+/Users/ayanshsingh/AGN Light Analysis GGSF/scripts/ingest_all_catalogs.py:43: DtypeWarning: Columns (1,2,5) have mixed types. Specify dtype option on import or set low_memory=False.
+  df = pd.read_csv(path, **kwargs)
+/Users/ayanshsingh/AGN Light Analysis GGSF/scripts/ingest_all_catalogs.py:43: FutureWarning: The 'delim_whitespace' keyword in pd.read_csv is deprecated and will be removed in a future version. Use ``sep='\s+'`` instead
+  df = pd.read_csv(path, **kwargs)
+WARNING: File may have been truncated: actual file length (3342071) is smaller than the expected size (1718484480) [astropy.io.fits.file]
+Ingesting Milliquas v8...
+  Milliquas: 106,595 normal AGN ingested
+Ingesting BZCAT 5th Edition...
+  BZCAT: 0 blazars ingested
+Ingesting Fermi 4FGL-DR4...
+  4FGL: 3,577 blazars ingested
+Ingesting CLAGN literature tables...
+  MacLeod+2019 FAILED: No columns to parse from file
+  Sheng+2020 FAILED: No columns to parse from file
+  Hon+2022 FAILED: No columns to parse from file
+  Ward+2024 FAILED: No columns to parse from file
+Ingesting Open Supernova Catalog...
+  OSC IIn: 0 SNe ingested
+  OSC IIP: 0 SNe ingested
+  OSC Ia: 0 SNe ingested
+  OSC Ib: 0 SNe ingested
+  OSC Ic: 0 SNe ingested
+  OSC IIb: 0 SNe ingested
+  SKIP OSC SLSN-I — file not found
+  OSC LBV: 0 SNe ingested
+  OSC Ibn: 0 SNe ingested
+Ingesting CRTS variable AGN...
+  CRTS FAILED: No columns to parse from file
+Ingesting SDSS DR16Q stratified sample...
+  DR16Q FAILED: buffer is too small for requested array
+Top-up normal_agn pool by 43,405 rows to target 150,000...
+  Top-up added: 43,405
+
+Total before dedup: 153,577
+Total after dedup:  153,556
+
+Saved to data/benchmark/benchmark_master_v3.csv
+
+Class breakdown:
+label
+normal_agn    149979
+blazar          3577
+
+Total: 153,556 sources
+
+Wrote catalog row counts to logs/ingest_catalog_counts.json
+=== PART 3: REBUILD SPLITS ===
+Legacy split mode PASS
+{
+  "input": "data/benchmark/benchmark_master_v3.csv",
+  "ratio": "70:15:15",
+  "seed": 42,
+  "n_total": 153556,
+  "n_train": 107488,
+  "n_dev": 23034,
+  "n_test": 23034,
+  "train_file": "data/benchmark/benchmark_v3_train.csv",
+  "dev_file": "data/benchmark/benchmark_v3_dev.csv",
+  "test_file": "data/benchmark/benchmark_v3_test.csv"
+}
+Part 3 summary: {'master': 153556, 'train': 107488, 'dev': 23034, 'test': 23034}
+=== PRE-PART-4 GATE ===
+Parts 1-3 completion check: PASS
+Part 1 failures tolerated: 0
+Ingestion catalog row counts:
+  bzcat: 0
+  clagn_hon_2022: 0
+  clagn_macleod_2019: 0
+  clagn_sheng_2020: 0
+  clagn_ward_2024: 0
+  crts: 0
+  dr16q: 0
+  fermi_4fgl: 3577
+  milliquas: 106595
+  normal_agn_topup: 43405
+  osc_IIP: 0
+  osc_IIb: 0
+  osc_IIn: 0
+  osc_Ia: 0
+  osc_Ib: 0
+  osc_Ibn: 0
+  osc_Ic: 0
+  osc_LBV: 0
+  osc_SLSN-I: 0
+  total_after_dedup: 153556
+  total_before_dedup: 153577
+Split counts:
+  master=153556 train=107488 dev=23034 test=23034
+=== PART 4: START WISE FETCH IN TMUX (wise_fetch) ===
+Started tmux session 'wise_fetch'.
+Attach: tmux attach -t wise_fetch
+Monitor: watch -n 30 "cat logs/fetch_progress.json"
+Cards count: ls cards/benchmark_v3/ | wc -l
+Failures: wc -l logs/failed_sources.csv
+=== PART 5 NOTE ===
+Run verification snippet after Part 4 completes.

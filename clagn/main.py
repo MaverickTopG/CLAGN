@@ -26,6 +26,14 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
+import random
+
+# ---------------------------------------------------------------------------
+# Global random seed for reproducibility (Part 8)
+# ---------------------------------------------------------------------------
+GLOBAL_RANDOM_SEED = 42
+np.random.seed(GLOBAL_RANDOM_SEED)
+random.seed(GLOBAL_RANDOM_SEED)
 
 # Suppress noisy upstream warnings
 warnings.filterwarnings('ignore', message='.*passwords of all user accounts.*')
@@ -45,7 +53,7 @@ from .models.structure_function import (
 )
 from .models.changepoint import bayesian_changepoint_detection, test_monotonic_trend
 from .scoring.clagn_score import (
-    compute_composite_clagn_score, apply_false_positive_rejection,
+    compute_composite_clagn_score, apply_contaminant_filters,
 )
 from .output.plots import plot_lightcurve_panel, plot_summary_grid
 from .output.tables import build_candidates_dataframe, write_output_csv, write_output_fits
@@ -396,6 +404,18 @@ def main():
     if args.min_epochs is not None:
         _cfg.MIN_EPOCHS = args.min_epochs
 
+    # ---- Load detection threshold from injection-recovery (if available) ---
+    try:
+        det_path = os.path.join(args.output, 'validation', 'detection_threshold.json')
+        if os.path.exists(det_path):
+            import json
+            with open(det_path, 'r') as f:
+                det = json.load(f)
+            if det.get('min_delta_mag') is not None:
+                _cfg.MIN_MAG_CHANGE_W1 = float(det['min_delta_mag'])
+    except Exception:
+        pass
+
     # ---- Setup --------------------------------------------------------------
     os.makedirs(args.output, exist_ok=True)
     os.makedirs(os.path.join(args.output, 'plots'), exist_ok=True)
@@ -500,6 +520,7 @@ def main():
             'ra': src.get('ra'), 'dec': src.get('dec'),
             'composite_score': score.get('composite', 0.0),
             'w1_delta_mag': score.get('delta_mag_w1', 0.0),
+            'changepoint_mjd': cp.get('best_break_mjd', np.nan),
             'changepoint_break_duration_days': cp.get('break_duration_days', np.nan),
             'changepoint_pre_break_mean': cp.get('pre_break_mean', np.nan),
             'changepoint_post_break_mean': cp.get('post_break_mean', np.nan),
@@ -508,7 +529,7 @@ def main():
         })
 
     fp_df = pd.DataFrame(fp_rows)
-    fp_df_updated = apply_false_positive_rejection(fp_df, lc_dict, wise_dict_map)
+    fp_df_updated = apply_contaminant_filters(fp_df, lc_dict, wise_dict_map)
 
     # Write back updated scores and contamination flags
     score_map = dict(zip(fp_df_updated['source_id'],
@@ -630,7 +651,16 @@ def main():
     # FLAW C1: Write provenance sidecar for reproducibility
     try:
         pipeline_config = vars(args)
-        sidecar_path = write_provenance_sidecar(csv_path, pipeline_config)
+        results_summary = {
+            'n_sources_input': len(catalog_df),
+            'n_sources_output': len(candidates_df),
+        }
+        sidecar_path = write_provenance_sidecar(
+            csv_path,
+            results_summary=results_summary,
+            pipeline_args=pipeline_config,
+            random_seed=GLOBAL_RANDOM_SEED,
+        )
         logger.info(f"Provenance sidecar: {sidecar_path}")
     except Exception as exc:
         logger.warning(f"Provenance sidecar failed: {exc}")

@@ -1,0 +1,26 @@
+{
+  "command": "/Users/ayanshsingh/AGN Light Analysis GGSF/analysis/run_all.py --input data/results.csv --outdir outputs/",
+  "created_utc": "2026-02-26T16:27:33.290646+00:00",
+  "deterministic_settings": {
+    "bias_qcut_bins": 6,
+    "hist_bins": 30,
+    "matplotlib_backend": "Agg",
+    "sort_key": [
+      "canonical_id",
+      "source_id"
+    ]
+  },
+  "duplicate_canonical_id_count": 0,
+  "input_path": "data/results.csv",
+  "notes": [],
+  "output_path": "outputs",
+  "row_count": 279,
+  "status": "ok",
+  "versions": {
+    "matplotlib": "3.10.6",
+    "numpy": "2.3.3",
+    "pandas": "2.3.3",
+    "python": "3.13.5",
+    "scipy": "1.16.3"
+  }
+}

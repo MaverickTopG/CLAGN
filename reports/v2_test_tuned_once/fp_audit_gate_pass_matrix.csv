@@ -1,0 +1,16 @@
+class,gate,pass_rate
+normal_agn,gate_blazar_veto,1.000000
+normal_agn,gate_data_sufficient,1.000000
+normal_agn,gate_state_change_ratio_pass,1.000000
+normal_agn,gate_transient_spike_pass,1.000000
+normal_agn,gate_wise_qc_pass,1.000000
+sn,gate_blazar_veto,1.000000
+sn,gate_data_sufficient,1.000000
+sn,gate_state_change_ratio_pass,1.000000
+sn,gate_transient_spike_pass,1.000000
+sn,gate_wise_qc_pass,1.000000
+star,gate_blazar_veto,1.000000
+star,gate_data_sufficient,1.000000
+star,gate_state_change_ratio_pass,1.000000
+star,gate_transient_spike_pass,1.000000
+star,gate_wise_qc_pass,1.000000

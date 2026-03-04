@@ -1,0 +1,3 @@
+source_id,canonical_id,score,status,n_points,baseline_days,band_coverage,baseline_years,delta_mag,delta_mag_method,rejection_reason
+Source A,SRC_A,,TOO_FEW_POINTS,49,2556.75,"W1_only",7.0,,seasonal_median_flux,"Only 49 epochs"
+Source B,SRC_B,0.82,OK,50,2556.75,"W1,W2",7.0,-0.35,seasonal_median_flux,

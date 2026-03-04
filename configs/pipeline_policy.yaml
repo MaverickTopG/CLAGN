@@ -1,0 +1,55 @@
+t_recall: 0.3493918746
+strict_mode_default: true
+random_seed: 42
+
+qa:
+  min_qual_frame: 1.0
+  cc_flag_clean_only: true
+  moon_lev_reject_min: 5
+  min_points_per_season: 2
+  min_good_points_per_season: 2
+  min_clean_points_total: 4
+  min_season_bins_total: 2
+
+gates:
+  hard_blazar_veto: true
+  require_wise_qc_pass: true
+  require_data_sufficient: true
+  state_change_ratio:
+    enabled: true
+    r_min: 3.0
+    eps: 0.001
+  transient_spike:
+    enabled: true
+    peak_frac: 0.6
+    adjacency_frac: 0.2
+    min_seasons: 4
+
+tuning:
+  enabled: true
+  only_split: dev
+  r_min_grid: [2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
+  peak_frac_grid: [0.4, 0.5, 0.6, 0.7, 0.8]
+  adjacency_frac_grid: [0.2, 0.3, 0.4, 0.5, 0.6]
+  min_clean_points_total_grid: [4, 6, 8, 10, 12]
+  min_season_bins_total_grid: [2, 3, 4, 5, 6]
+  objective: lexicographic_balanced_accuracy_recall_blazar
+  class_fp_objective:
+    enabled: true
+    weights:
+      normal_agn: 1.0
+      star: 1.0
+      sn: 0.0
+  class_fp_caps:
+    normal_agn: null
+    star: null
+
+acceptance_targets:
+  recall_clagn_min: 0.80
+  blazar_fpr_max: 0.10
+  balanced_accuracy_min: 0.90
+
+evaluation:
+  reliability_bins: 10
+  recall_at_k: [10, 20, 50]
+  synthetic_prevalence_shift: [0.05, 0.10, 0.20, 0.50]

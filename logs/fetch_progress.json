@@ -1,0 +1,11 @@
+{
+  "completed": 3071,
+  "succeeded": 3022,
+  "failed": 275,
+  "skipped": 49,
+  "total": 156950,
+  "elapsed_sec": 63103,
+  "eta": "36 days, 14:18:49",
+  "cards_dir_size_gb": 0.05,
+  "timestamp": "2026-03-03T02:48:08.552949+00:00"
+}

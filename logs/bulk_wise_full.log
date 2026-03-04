@@ -1,0 +1,4 @@
+Benchmark rows: 156,950
+Occupied HEALPix cells (nside=32): 5,283
+Cell radius: 0.800 deg
+Workers: 2 | To query: 5,283 | Skipping existing: 0

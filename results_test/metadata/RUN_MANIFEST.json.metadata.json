@@ -1,0 +1,13 @@
+{
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "config_hash": "261b2a741705f638c674db30dbf22a8db120ec05b8d51fc010151598680995b9",
+  "benchmark_hash": "2225ea4b2cb0007e19ed31aa5553048d163c91d171e81f7fe8a69fc6eaa503e0",
+  "created_utc": "2026-02-24T05:30:04.143652+00:00",
+  "command": "reproduce_all.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline",
+  "start_utc": "2026-02-24T05:29:57.932092+00:00",
+  "end_utc": "2026-02-24T05:30:04.132126+00:00",
+  "output_dir": "results_test",
+  "data_dir": "tests/data",
+  "benchmark_dir": "tests/data/benchmark",
+  "output_path": "results_test/RUN_MANIFEST.json"
+}

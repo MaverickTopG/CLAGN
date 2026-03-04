@@ -1,0 +1,130 @@
+{
+  "timestamp_utc": "2026-02-27T18:10:09.937450+00:00",
+  "config": {
+    "results": "data/real_clagn/benchmark_scores.csv",
+    "topn": 50,
+    "outdir": "outputs/hardened_run",
+    "score_thresh": 0.7,
+    "wise_dir": "data/wise",
+    "gaia": null,
+    "known_blazars": "known_blazars.csv",
+    "allow_missing_blazar_catalog": false,
+    "known_clagn": null,
+    "coordinates": "coordinates.csv",
+    "benchmark_master": "data/real_clagn/benchmark_master.csv",
+    "pdf": false,
+    "seed": 0,
+    "overwrite": false,
+    "skip_missing_wise": true,
+    "fetch_wise_if_missing": false,
+    "merge_master": false,
+    "master_csv": "data/real_clagn/benchmark_master.csv",
+    "summary_csv": null,
+    "master_out": "data/real_clagn/benchmark_master_augmented.csv",
+    "policy_config": "configs/pipeline_policy.yaml",
+    "t_recall": null,
+    "strict_mode": true
+  },
+  "policy": {
+    "t_recall": 0.3493918746,
+    "strict_mode_default": true,
+    "random_seed": 42,
+    "qa": {
+      "min_qual_frame": 1.0,
+      "cc_flag_clean_only": true,
+      "moon_lev_reject_min": 5,
+      "min_points_per_season": 2,
+      "min_clean_points_total": 10,
+      "min_season_bins_total": 4
+    },
+    "gates": {
+      "hard_blazar_veto": true,
+      "require_wise_qc_pass": true,
+      "require_data_sufficient": true
+    },
+    "acceptance_targets": {
+      "recall_clagn_min": 0.8,
+      "blazar_fpr_max": 0.1,
+      "balanced_accuracy_min": 0.9
+    },
+    "evaluation": {
+      "reliability_bins": 10,
+      "recall_at_k": [
+        10,
+        20,
+        50
+      ],
+      "synthetic_prevalence_shift": [
+        0.05,
+        0.1,
+        0.2,
+        0.5
+      ]
+    }
+  },
+  "inputs": {
+    "results": "data/real_clagn/benchmark_scores.csv",
+    "results_sha256": "1f695058a35a01e75a168d29849aad1db1573caf1f932983a8f50a3c5779da96",
+    "known_blazars": "known_blazars.csv",
+    "known_blazars_sha256": "e93922c4ec2599c42970d76b97d93021a6e104cab55d1c84279e26d8c8b5c9d2",
+    "known_clagn": "data/benchmark/known_clagn.csv",
+    "known_clagn_sha256": "d4eae4b8247ff0b360c3593f1808682eeee79af3c9d986134a9895c0189bb649"
+  },
+  "selected_count": 7,
+  "results_augmented_csv": "outputs/hardened_run/benchmark_scores_augmented.csv",
+  "missing_wise_candidates": [
+    "SDSSJ101322.43+214021.74",
+    "SDSSJ100256.22+475027.7",
+    "3C 345",
+    "SDSSJ091407.16+243633.08",
+    "5054111356737024",
+    "SDSSJ081425.89+294115.6",
+    "1997bt",
+    "3C 446",
+    "2000dw",
+    "SDSSJ025410.08+034911.9",
+    "SDSSJ082942.66+415436.8",
+    "SDSSJ020222.00+010557.11",
+    "3C 66A",
+    "SDSSJ113706.93+481943.68",
+    "1959C",
+    "SDSSJ022930.91-000845.37",
+    "NGC 3516",
+    "NGC 1275",
+    "5928944654308352",
+    "4C 29.45",
+    "3C 120",
+    "SDSSJ161711.42+063833.4",
+    "SDSSJ141213.61+021202.1",
+    "SDSSJ110501.26+562724.5",
+    "SDSSJ215130.35+003522.26",
+    "1999H",
+    "SDSSJ124946.13+365204.21",
+    "OJ 287",
+    "SDSSJ102152.34+464515.6",
+    "SDSSJ123359.12+084211.5",
+    "3C 382.0",
+    "Fairall 9",
+    "NGC 1566",
+    "000159.27+034352.9",
+    "SDSSJ090258.39+252915.15",
+    "SDSSJ012256.19-000252.68",
+    "Mrk 421",
+    "AKN 120",
+    "MR",
+    "SDSSJ105325.40+302419.34",
+    "Mrk 205",
+    "3C 371",
+    "3532799579575168"
+  ],
+  "qa_config": {
+    "min_qual_frame": 1.0,
+    "cc_flag_clean_only": true,
+    "moon_lev_reject_min": 5,
+    "min_points_per_season": 2
+  },
+  "python": "3.13.5 (main, Sep  4 2025, 12:51:39) [Clang 16.0.0 (clang-1600.0.26.6)]",
+  "pandas": "2.3.3",
+  "numpy": "2.3.3",
+  "master_merge": null
+}

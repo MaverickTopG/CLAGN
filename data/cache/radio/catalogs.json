@@ -1,0 +1,17 @@
+{
+  "first": {
+    "catalog": "VIII/92/first14",
+    "columns": ["RAJ2000", "DEJ2000", "Fint"],
+    "radius_arcsec": 5.0
+  },
+  "nvss": {
+    "catalog": "VIII/65/nvss",
+    "columns": ["RAJ2000", "DEJ2000", "S1.4"],
+    "radius_arcsec": 5.0
+  },
+  "bzcat": {
+    "catalog": "VII/274/bzcat5",
+    "columns": ["RAJ2000", "DEJ2000", "Name"],
+    "radius_arcsec": 5.0
+  }
+}

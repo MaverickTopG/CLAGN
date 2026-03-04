@@ -72,3 +72,95 @@ Cross-validating against known CLAGN...
 2026-02-21 02:03:17,589 [INFO] clagn.main —   Plots:       ./results/plots/
 2026-02-21 02:03:17,589 [INFO] clagn.main —   Log:         ./results/pipeline.log
 2026-02-21 02:03:17,589 [INFO] clagn.main — ======================================================================
+2026-02-23 20:34:32,548 [INFO] clagn.main — ======================================================================
+2026-02-23 20:34:32,548 [INFO] clagn.main — CLAGN DETECTION PIPELINE
+2026-02-23 20:34:32,549 [INFO] clagn.main — Scientific basis: Ricci & Trakhtenbrot 2022 (arXiv:2211.05132)
+2026-02-23 20:34:32,549 [INFO] clagn.main — ======================================================================
+2026-02-23 20:34:32,549 [INFO] clagn.main — Input:   catalog.csv
+2026-02-23 20:34:32,549 [INFO] clagn.main — Output:  results/
+2026-02-23 20:34:32,549 [INFO] clagn.main — Top N:   6
+2026-02-23 20:34:32,549 [INFO] clagn.main — Workers: 1
+2026-02-23 20:34:32,549 [INFO] clagn.main — 
+Loading catalog: catalog.csv
+2026-02-23 20:34:32,553 [INFO] clagn.ingestion.catalog — Loaded 10 sources from catalog.csv
+2026-02-23 20:34:32,555 [INFO] clagn.ingestion.catalog — Final catalog: 10 sources after validation (started with 10)
+2026-02-23 20:34:32,555 [INFO] clagn.main — Processing 10 sources
+
+2026-02-23 20:35:38,992 [INFO] clagn.ingestion.wise — Mrk1018: 204 clean epochs | baseline=14.5 yr | pre-gap=31 | post-gap=173
+2026-02-23 20:35:42,145 [INFO] clagn.worker.Mrk1018 — [001/10] Mrk1018 | z=0.042 | Baseline=14.5yr | n_epochs=204 | Score=0.813 | cs_agn_turn_off_photometric_candidate
+2026-02-23 20:36:19,356 [INFO] clagn.worker.1ES1927+654 — [002/10] 1ES1927+654 | z=0.011 | Rejected: Only 3 valid W1 flux measurements
+2026-02-23 20:36:54,340 [INFO] clagn.ingestion.wise — NGC2617: 7 clean epochs | baseline=4.6 yr | pre-gap=0 | post-gap=7
+2026-02-23 20:36:54,342 [INFO] clagn.worker.NGC2617 — [003/10] NGC2617 | z=0.014 | Rejected: Only 7 epochs (need 20)
+2026-02-23 20:37:35,102 [INFO] clagn.ingestion.wise — Mrk590: 259 clean epochs | baseline=14.5 yr | pre-gap=62 | post-gap=197
+2026-02-23 20:37:37,015 [INFO] clagn.worker.Mrk590 — [004/10] Mrk590 | z=0.026 | Baseline=14.5yr | n_epochs=259 | Score=0.546 | ambiguous_photometric_clagn_candidate
+2026-02-23 20:38:28,983 [INFO] clagn.ingestion.wise — HE1136-2304: 22 clean epochs | baseline=9.0 yr | pre-gap=0 | post-gap=22
+2026-02-23 20:38:30,526 [INFO] clagn.worker.HE1136-2304 — [005/10] HE1136-2304 | z=0.027 | Baseline=9.0yr | n_epochs=22 | Score=0.382 | ambiguous_photometric_clagn_candidate
+2026-02-23 20:39:45,629 [INFO] clagn.ingestion.wise — NGC4151: 282 clean epochs | baseline=14.0 yr | pre-gap=31 | post-gap=251
+2026-02-23 20:39:47,339 [INFO] clagn.worker.NGC4151 — [006/10] NGC4151 | z=0.003 | Rejected: stellar PM = 3.4σ > 3.0σ threshold
+2026-02-23 20:40:50,363 [INFO] clagn.ingestion.wise — NGC1566: 534 clean epochs | baseline=14.5 yr | pre-gap=103 | post-gap=431
+2026-02-23 20:40:51,955 [INFO] clagn.worker.NGC1566 — [007/10] NGC1566 | z=0.005 | Rejected: stellar PM = 10.4σ > 3.0σ threshold
+2026-02-23 20:42:40,483 [INFO] clagn.ingestion.wise — SDSSJ015957+003310: 184 clean epochs | baseline=14.5 yr | pre-gap=33 | post-gap=151
+2026-02-23 20:42:42,559 [INFO] clagn.worker.SDSSJ015957+003310 — [008/10] SDSSJ015957+003310 | z=0.312 | Baseline=14.5yr | n_epochs=184 | Score=0.308 | ambiguous_photometric_clagn_candidate
+2026-02-23 20:44:33,519 [INFO] clagn.ingestion.wise — SDSSJ233602+001728: 8 clean epochs | baseline=14.0 yr | pre-gap=1 | post-gap=7
+2026-02-23 20:44:33,520 [INFO] clagn.worker.SDSSJ233602+001728 — [009/10] SDSSJ233602+001728 | z=0.243 | Rejected: Only 8 epochs (need 20)
+2026-02-23 20:46:23,990 [INFO] clagn.ingestion.wise — 3C273: 233 clean epochs | baseline=14.0 yr | pre-gap=24 | post-gap=209
+2026-02-23 20:46:25,765 [INFO] clagn.worker.3C273 — [010/10] 3C273 | z=0.158 | Baseline=14.0yr | n_epochs=233 | Score=0.511 | ambiguous_photometric_clagn_candidate
+2026-02-23 20:46:25,766 [INFO] clagn.main — 
+============================================================
+Processing complete: 5/10 sources succeeded in 713s
+============================================================
+2026-02-23 20:46:25,809 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:27,682 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:28,758 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:29,812 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:30,857 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:31,878 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:33,479 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:35,039 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:36,586 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:38,119 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:39,641 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:40,676 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:42,225 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:43,721 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:44,755 [WARNING] astroquery — InputWarning: Coordinate string is being interpreted as an ICRS coordinate provided in degrees.
+2026-02-23 20:46:45,815 [WARNING] clagn.main — Sanity check: Mrk590 FAILS criteria — |delta_mag_w1|=0.164 < 0.3; flux_ratio=1.16 (effective=1.16) < 2.0 — replacing with next ranked source
+2026-02-23 20:46:45,818 [WARNING] clagn.main — Sanity check: 3C273 FAILS criteria — |delta_mag_w1|=0.184 < 0.3; flux_ratio=0.84 (effective=1.19) < 2.0 — replacing with next ranked source
+2026-02-23 20:46:45,818 [WARNING] clagn.main — Sanity check: HE1136-2304 FAILS criteria — |delta_mag_w1|=0.000 < 0.3; flux_ratio=1.00 (effective=1.00) < 2.0 — replacing with next ranked source
+2026-02-23 20:46:45,818 [WARNING] clagn.main — Sanity check: SDSSJ015957+003310 FAILS criteria — |delta_mag_w1|=0.030 < 0.3; flux_ratio=0.97 (effective=1.03) < 2.0 — replacing with next ranked source
+2026-02-23 20:46:45,818 [INFO] clagn.main — 
+Top 1 CLAGN candidates:
+2026-02-23 20:46:45,818 [INFO] clagn.main — ------------------------------------------------------------
+2026-02-23 20:46:45,820 [INFO] clagn.main — # 1 | Mrk1018 | z=0.042 | Score=0.813 | cs_agn_turn_off_photometric_candidate
+2026-02-23 20:46:45,820 [INFO] clagn.main — 
+Generating plots...
+2026-02-23 20:46:46,335 [INFO] clagn.output.plots — Saved plot: results/plots/rank01_Mrk1018.png
+2026-02-23 20:46:46,469 [INFO] clagn.output.plots — Saved summary grid: results/summary_grid.png
+2026-02-23 20:46:46,469 [INFO] clagn.main — 
+Writing output tables...
+2026-02-23 20:46:46,472 [INFO] clagn.output.tables — Wrote 1 candidates to results/top_candidates.csv
+2026-02-23 20:46:46,496 [INFO] clagn.output.tables — Wrote 1 candidates to results/top_candidates.fits (FITS)
+2026-02-23 20:46:46,539 [INFO] clagn.main — Provenance sidecar: results/top_candidates_provenance.json
+2026-02-23 20:46:46,541 [INFO] clagn.main — 
+Cross-validating against known CLAGN...
+2026-02-23 20:46:46,544 [INFO] clagn.utils.validation — Known CLAGN Mrk 1018 found at rank 1 (score=0.813, sep=0.0")
+2026-02-23 20:46:46,547 [INFO] clagn.utils.validation — Known CLAGN 1ES 1927+654 not found in pipeline input (nearest match at 332977.0")
+2026-02-23 20:46:46,548 [INFO] clagn.utils.validation — Known CLAGN NGC 2617 not found in pipeline input (nearest match at 173441.7")
+2026-02-23 20:46:46,551 [INFO] clagn.utils.validation — Known CLAGN Mrk 590 found at rank 2 (score=0.273, sep=0.0")
+2026-02-23 20:46:46,551 [INFO] clagn.utils.validation — Known CLAGN HE 1136-2304 found at rank 4 (score=0.191, sep=0.0")
+2026-02-23 20:46:46,552 [INFO] clagn.utils.validation — Known CLAGN NGC 4151 not found in pipeline input (nearest match at 135333.1")
+2026-02-23 20:46:46,552 [INFO] clagn.utils.validation — Known CLAGN SDSS J0159+0033 found at rank 5 (score=0.154, sep=0.0")
+2026-02-23 20:46:46,552 [INFO] clagn.utils.validation — Known CLAGN SDSS J2336+0017 not found in pipeline input (nearest match at 129534.9")
+2026-02-23 20:46:46,552 [INFO] clagn.utils.validation — Pipeline recovered 4/4 known CLAGN in the input catalog (recovery rate = 100%)
+2026-02-23 20:46:46,553 [INFO] clagn.main — Recovery: 4/4 known CLAGN recovered (rate=100%)
+2026-02-23 20:46:46,553 [INFO] clagn.main —   Mrk 1018: rank #1, score=0.813
+2026-02-23 20:46:46,553 [INFO] clagn.main —   Mrk 590: rank #2, score=0.273
+2026-02-23 20:46:46,553 [INFO] clagn.main —   HE 1136-2304: rank #4, score=0.191
+2026-02-23 20:46:46,553 [INFO] clagn.main —   SDSS J0159+0033: rank #5, score=0.154
+2026-02-23 20:46:46,553 [INFO] clagn.main — 
+======================================================================
+2026-02-23 20:46:46,553 [INFO] clagn.main — PIPELINE COMPLETE
+2026-02-23 20:46:46,553 [INFO] clagn.main —   Output CSV:  results/top_candidates.csv
+2026-02-23 20:46:46,553 [INFO] clagn.main —   Plots:       results/plots/
+2026-02-23 20:46:46,553 [INFO] clagn.main —   Log:         results/pipeline.log
+2026-02-23 20:46:46,553 [INFO] clagn.main — ======================================================================

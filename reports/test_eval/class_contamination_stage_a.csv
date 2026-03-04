@@ -1,0 +1,6 @@
+class,n_rows,n_negatives,predicted_positive_on_negative,fpr_within_class
+blazar,5,5,5,1.0
+clagn,10,0,0,
+normal_agn,8,8,3,0.375
+sn,5,5,2,0.4
+star,13,13,3,0.23076923076923078

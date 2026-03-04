@@ -5,6 +5,7 @@ Uses astroquery.gaia with ADQL for efficiency.
 Public DR3 queries do NOT require login.
 """
 import logging
+import os
 import warnings
 import numpy as np
 
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 # Suppress the ESA authentication warning at import time
 warnings.filterwarnings('ignore', message='.*passwords of all user accounts.*')
+
+# Circuit-breaker for Gaia Archive outages / schema regressions.
+# If the archive starts returning query-parse errors (e.g., unknown table/columns
+# during ESA infrastructure changes), disable Gaia queries for the remainder of
+# the run and return null Gaia results so the photometric pipeline can proceed.
+_GAIA_QUERY_DISABLED = False
+_GAIA_DISABLE_REASON = None
+_GAIA_ENV_DISABLE_LOGGED = False
 
 
 def _fmt(x, spec=".2f"):
@@ -224,6 +233,19 @@ def query_gaia_dr3(ra, dec, source_id):
     -------
     result : dict with all fields needed for filtering and output.
     """
+    global _GAIA_QUERY_DISABLED, _GAIA_DISABLE_REASON, _GAIA_ENV_DISABLE_LOGGED
+
+    if str(os.getenv("CLAGN_DISABLE_GAIA", "")).strip().lower() in {"1", "true", "yes", "on"}:
+        if not _GAIA_ENV_DISABLE_LOGGED:
+            logger.warning("CLAGN_DISABLE_GAIA is set; skipping all Gaia queries for this run.")
+            _GAIA_ENV_DISABLE_LOGGED = True
+        return _null_gaia_result()
+
+    if _GAIA_QUERY_DISABLED:
+        if _GAIA_DISABLE_REASON:
+            logger.debug(f"{source_id}: Skipping GAIA query (disabled): {_GAIA_DISABLE_REASON}")
+        return _null_gaia_result()
+
     try:
         from astroquery.gaia import Gaia
     except ImportError:
@@ -251,7 +273,22 @@ def query_gaia_dr3(ra, dec, source_id):
             job = Gaia.launch_job(query)
             tbl = job.get_results()
     except Exception as exc:
-        logger.warning(f"{source_id}: GAIA DR3 query failed: {exc}")
+        msg = str(exc)
+        fatal_markers = [
+            'Cannot parse query',
+            'Unknown table',
+            'unresolved identifiers',
+            'Error 400',
+        ]
+        if any(marker.lower() in msg.lower() for marker in fatal_markers):
+            _GAIA_QUERY_DISABLED = True
+            _GAIA_DISABLE_REASON = (
+                "Gaia archive query schema unavailable (likely ESA archive outage/schema change). "
+                "Disabled Gaia queries for this run; proceeding with null Gaia features."
+            )
+            logger.warning(f"{source_id}: GAIA DR3 fatal query error; disabling GAIA for run. Raw error: {exc}")
+        else:
+            logger.warning(f"{source_id}: GAIA DR3 query failed: {exc}")
         return _null_gaia_result()
 
     if tbl is None or len(tbl) == 0:
@@ -506,7 +543,7 @@ def is_foreground_star(gaia_row):
     # 2. Parallax (strongest test — direct distance measurement)
     try:
         plx_sig = gaia_row.get('gaia_parallax_sig', np.nan)
-        if np.isfinite(plx_sig) and plx_sig > 3.0:
+        if np.isfinite(plx_sig) and plx_sig > MAX_PARALLAX_SIG:
             reasons.append(f'parallax_sig={plx_sig:.1f}')
     except (KeyError, TypeError):
         pass

@@ -1,0 +1,28 @@
+=== CLAGN Pipeline Preflight Check ===
+Date: Wed Mar  4 01:37:23 PST 2026
+Python: Python 3.13.7
+Working directory: /Users/ayanshsingh/AGN Light Analysis GGSF
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
+All imports OK
+  LightGBM: 4.6.0
+  Optuna:   4.7.0
+  Healpy:   1.19.0
+  SHAP:     0.51.0
+Testing IRSA connectivity...
+IRSA: FAIL
+Testing SDSS connectivity...
+SDSS: connectivity issue
+<string>:10: DtypeWarning: Columns (7) have mixed types. Specify dtype option on import or set low_memory=False.
+
+=== CURRENT STATE ===
+Benchmark (data/benchmark/benchmark_master_v3.csv): 156,950 sources
+label
+normal_agn    149783
+blazar          7119
+CLAGN             48
+Cards (cards/benchmark_v3): 3,076
+Classifier v2: NOT YET TRAINED
+
+=== Preflight complete. Review above before proceeding. ===

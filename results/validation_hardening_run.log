@@ -1,0 +1,77 @@
+=== make validate (2026-02-24T05:26:14Z) ===
+python reproduce_all.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline
+Benchmark build PASS
+Label leakage check PASS
+Benchmark evaluation complete
+/Users/ayanshsingh/.pyenv/versions/3.13.5/lib/python3.13/site-packages/sklearn/metrics/_ranking.py:1046: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/Users/ayanshsingh/.pyenv/versions/3.13.5/lib/python3.13/site-packages/sklearn/metrics/_ranking.py:1201: UndefinedMetricWarning: No positive samples in y_true, true positive value should be meaningless
+  warnings.warn(
+Benchmark evaluation complete
+Injection-recovery complete
+Injection-recovery plot complete
+Crossmatch coverage report complete
+Claims lint PASS
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/build_benchmark_datasets.py --data_dir tests/data --benchmark_dir tests/data/benchmark
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/check_label_leakage.py --benchmark tests/data/benchmark/benchmark_master.csv
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_benchmark.py --benchmark_dir tests/data/benchmark --split dev --output_dir results_test/dev --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_benchmark.py --benchmark_dir tests/data/benchmark --split test --output_dir results_test --threshold 0.61 --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/run_injection_recovery.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/plot_injection_recovery.py --input_csv results_test/injection_recovery/grid_results.csv --output_dir results_test --benchmark_dir tests/data/benchmark
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/report_crossmatch_coverage.py --data_dir tests/data --output_dir results_test --benchmark_dir tests/data/benchmark --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/claims_lint.py --output_dir results_test --benchmark_dir tests/data/benchmark --scan_dir tests/data/paper --offline
+[reproduce] complete
+=== make test (2026-02-24T05:27:12Z) ===
+pytest -q
+........                                                                 [100%]
+8 passed in 5.34s
+=== make test (2026-02-24T05:29:10Z) ===
+pytest -q
+........                                                                 [100%]
+8 passed in 5.40s
+=== make validate (2026-02-24T05:29:16Z) ===
+python reproduce_all.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline
+Benchmark build PASS
+Label leakage check PASS
+Benchmark evaluation complete
+/Users/ayanshsingh/.pyenv/versions/3.13.5/lib/python3.13/site-packages/sklearn/metrics/_ranking.py:1046: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/Users/ayanshsingh/.pyenv/versions/3.13.5/lib/python3.13/site-packages/sklearn/metrics/_ranking.py:1201: UndefinedMetricWarning: No positive samples in y_true, true positive value should be meaningless
+  warnings.warn(
+Benchmark evaluation complete
+Injection-recovery complete
+Injection-recovery plot complete
+Crossmatch coverage report complete
+Claims lint PASS
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/build_benchmark_datasets.py --data_dir tests/data --benchmark_dir tests/data/benchmark
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/check_label_leakage.py --benchmark tests/data/benchmark/benchmark_master.csv
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_benchmark.py --benchmark_dir tests/data/benchmark --split dev --output_dir results_test/dev --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_benchmark.py --benchmark_dir tests/data/benchmark --split test --output_dir results_test --threshold 0.61 --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/run_injection_recovery.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/plot_injection_recovery.py --input_csv results_test/injection_recovery/grid_results.csv --output_dir results_test --benchmark_dir tests/data/benchmark
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/report_crossmatch_coverage.py --data_dir tests/data --output_dir results_test --benchmark_dir tests/data/benchmark --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/claims_lint.py --output_dir results_test --benchmark_dir tests/data/benchmark --scan_dir tests/data/paper --offline
+[reproduce] complete
+=== make test (2026-02-24T05:29:51Z) ===
+pytest -q
+........                                                                 [100%]
+8 passed in 5.63s
+=== make validate (2026-02-24T05:29:57Z) ===
+python reproduce_all.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline
+Benchmark build PASS
+Label leakage check PASS
+Benchmark evaluation complete
+Benchmark evaluation complete
+Injection-recovery complete
+Injection-recovery plot complete
+Crossmatch coverage report complete
+Claims lint PASS
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/build_benchmark_datasets.py --data_dir tests/data --benchmark_dir tests/data/benchmark
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/check_label_leakage.py --benchmark tests/data/benchmark/benchmark_master.csv
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_benchmark.py --benchmark_dir tests/data/benchmark --split dev --output_dir results_test/dev --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/evaluate_benchmark.py --benchmark_dir tests/data/benchmark --split test --output_dir results_test --threshold 0.61 --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/run_injection_recovery.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/plot_injection_recovery.py --input_csv results_test/injection_recovery/grid_results.csv --output_dir results_test --benchmark_dir tests/data/benchmark
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/report_crossmatch_coverage.py --data_dir tests/data --output_dir results_test --benchmark_dir tests/data/benchmark --offline
+[reproduce] /Users/ayanshsingh/.pyenv/versions/3.13.5/bin/python scripts/claims_lint.py --output_dir results_test --benchmark_dir tests/data/benchmark --scan_dir tests/data/paper --offline
+[reproduce] complete

@@ -1,0 +1,346 @@
+{
+  "pipeline_version": "a1e36a5",
+  "git_hash": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "run_timestamp": "2026-02-24T04:46:46.531569Z",
+  "config_snapshot": {
+    "np": "<module 'numpy' from '/Users/ayanshsingh/.pyenv/versions/3.13.5/lib/python3.13/site-packages/numpy/__init__.py'>",
+    "WISE_ZERO_POINTS": {
+      "W1": 309.54,
+      "W2": 171.787,
+      "W3": 31.674,
+      "W4": 8.363
+    },
+    "WISE_VEGA_ZERO_POINTS": {
+      "W1": 309.54,
+      "W2": 171.787,
+      "W3": 31.674,
+      "W4": 8.363
+    },
+    "WISE_W1_ZERO_POINT_JY": 309.54,
+    "WISE_W2_ZERO_POINT_JY": 171.787,
+    "WISE_SEASON_ANCHOR_MJD": 55200.0,
+    "DELTA_MAG_SIGN_CONVENTION": "\nSIGN CONVENTION \u2014 ENFORCED EVERYWHERE IN THIS CODEBASE\n=======================================================\n\ndelta_mag is defined as:\n    delta_mag = mag_early - mag_late\n             = -2.5 * log10(F_early / F_late)\n             = +2.5 * log10(F_late / F_early)\n\nPOSITIVE delta_mag = source BRIGHTENED (flux INCREASED)\n    = CS-AGN Turn-ON event\n    = accretion rate increased\n    = W1 flux went UP\n\nNEGATIVE delta_mag = source FADED (flux DECREASED)\n    = CS-AGN Turn-OFF event\n    = accretion rate decreased\n    = W1 flux went DOWN\n\nflux_ratio is defined as:\n    flux_ratio = F_late / F_early\n\nflux_ratio > 1 = source brightened (= positive delta_mag)\nflux_ratio < 1 = source faded     (= negative delta_mag)\n\nRelationship:\n    delta_mag = +2.5 * log10(flux_ratio)\n    flux_ratio = 10^(delta_mag / 2.5)\n\nFor CLAGN detection threshold: |delta_mag| >= 0.3\n(both turn-on and turn-off events qualify)\n\nDO NOT use abs() on delta_mag in scoring.\nDO NOT use max(mags) - min(mags).\nDO NOT use single-epoch comparison.\nUSE: seasonal median flux method (compute_delta_mag_correct in variability.py)\n",
+    "mag_to_flux_mjy": "<function mag_to_flux_mjy at 0x102059440>",
+    "flux_mjy_to_mag": "<function flux_mjy_to_mag at 0x1020594e0>",
+    "WISE_KNOWN_SYSTEMATICS": [],
+    "WISE_NEOWISE_KNOWN_SYSTEMATICS": [],
+    "flag_systematic_epochs": "<function flag_systematic_epochs at 0x102059580>",
+    "WISE_RELIABLE_PHOTOMETRY_LIMITS": {
+      "W1": {
+        "bright": 8.0,
+        "faint": 14.5
+      },
+      "W2": {
+        "bright": 6.7,
+        "faint": 13.7
+      }
+    },
+    "check_wise_saturation": "<function check_wise_saturation at 0x102059620>",
+    "MIN_BASELINE_YEARS": 7.0,
+    "MIN_EPOCHS": 20,
+    "MIN_EPOCHS_PRE_GAP": 5,
+    "MIN_EPOCHS_POST_GAP": 5,
+    "MIN_REDSHIFT": 0.002,
+    "MAX_REDSHIFT": 5.0,
+    "MAX_PROPER_MOTION_SIG": 3.0,
+    "MAX_RUWE": 1.4,
+    "MAX_PARALLAX_SIG": 3.0,
+    "RUWE_HARD_REJECT": 2.5,
+    "RUWE_SOFT_FLAG": 1.4,
+    "SENSITIVITY_THRESHOLDS_TO_TEST": {
+      "MIN_BASELINE_YEARS": [
+        5.0,
+        7.0,
+        10.0
+      ],
+      "MIN_REDSHIFT": [
+        0.002,
+        0.005,
+        0.01
+      ],
+      "SIGMA_CLIP_SIGMA": [
+        3.5,
+        4.0,
+        5.0
+      ],
+      "MIN_DELTA_MAG": [
+        0.2,
+        0.3,
+        0.4,
+        0.5
+      ],
+      "MIN_EPOCHS_PER_SEASON": [
+        2,
+        3,
+        5
+      ],
+      "MIN_SEASONS_REQUIRED": [
+        3,
+        4,
+        5
+      ],
+      "GAIA_SEARCH_RADIUS_ARCSEC": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "MAX_PARALLAX_SIG": [
+        2.0,
+        3.0,
+        5.0
+      ],
+      "operating_threshold": [
+        0.3,
+        0.4,
+        0.5,
+        0.6
+      ]
+    },
+    "WISE_AGN_COLOR_CUT": 0.8,
+    "DRW_LOG_TAU_MIN": 1.0,
+    "DRW_LOG_TAU_MAX": 8.5,
+    "DRW_LOG_SIGMA_MIN": -5.0,
+    "DRW_LOG_SIGMA_MAX": 5.0,
+    "DRW_MAX_EPOCHS_FOR_FULL_FIT": 300,
+    "SCORE_WEIGHTS": {
+      "drw_nonstationarity": 3.0,
+      "delta_mag_w1": 2.5,
+      "changepoint_bic": 2.5,
+      "sf_break": 2.0,
+      "color_evolution": 1.5,
+      "drw_sigma_excess": 1.5,
+      "gaia_variability": 1.0
+    },
+    "MAX_SCORE": 14.0,
+    "WISE_ALLWISE_SEARCH_RADIUS_ARCSEC": 8.0,
+    "WISE_NEOWISE_SEARCH_RADIUS_ARCSEC": 6.0,
+    "WISE_SEARCH_RADIUS_ARCSEC": 6.0,
+    "GAIA_SEARCH_RADIUS_ARCSEC": 2.0,
+    "GAIA_ACCEPT_RADIUS_ARCSEC": 1.0,
+    "WISE_HIBERNATION_START_MJD": 55593,
+    "WISE_HIBERNATION_END_MJD": 56987,
+    "WISE_HIBERNATION_MJD_START": 55593,
+    "WISE_HIBERNATION_MJD_END": 56987,
+    "SIGMA_CLIP_SIGMA": 4.0,
+    "SIGMA_CLIP_ITERS": 3,
+    "MIN_FLUX_RATIO_CHANGE": 2.0,
+    "MIN_MAG_CHANGE_W1": 0.3,
+    "IRSA_ALLWISE_TABLE": "allwise_p3as_mep",
+    "IRSA_NEOWISE_TABLE": "neowiser_p1bs_psd",
+    "ALLWISE_MEPT_COLUMNS": "ra, dec, mjd, w1mpro_ep, w1sigmpro_ep, w2mpro_ep, w2sigmpro_ep, w1flux_ep, w1sigflux_ep, w2flux_ep, w2sigflux_ep, cc_flags, qi_fact, saa_sep, moon_masked, nb",
+    "NEOWISE_COLUMNS": "ra, dec, mjd, w1mpro, w1sigmpro, w2mpro, w2sigmpro, w1snr, w2snr, w1flux, w1sigflux, w2flux, w2sigflux, cc_flags, ph_qual, qi_fact, saa_sep, moon_masked, nb",
+    "GAIA_MAIN_TABLE": "gaiadr3.gaia_source",
+    "GAIA_COLUMNS": "source_id, ra, dec, pmra, pmra_error, pmdec, pmdec_error, ruwe, astrometric_excess_noise, astrometric_excess_noise_sig, phot_g_mean_mag, phot_g_mean_flux_over_error, phot_variable_flag, non_single_star, classprob_dsc_combmod_quasar, classprob_dsc_combmod_galaxy",
+    "GAIA_COLUMNS_WITH_PARALLAX": "source_id, ra, dec, parallax, parallax_error, pmra, pmra_error, pmdec, pmdec_error, ruwe, phot_g_mean_mag, phot_g_mean_flux_over_error, astrometric_excess_noise, astrometric_excess_noise_sig, phot_variable_flag, classprob_dsc_combmod_quasar, classprob_dsc_combmod_galaxy",
+    "HOST_CONTAMINATION_Z_THRESHOLD": 0.05,
+    "SF_N_LAG_BINS": 20,
+    "SF_N_BOOTSTRAP": 1000,
+    "SF_MIN_PAIRS_PER_BIN": 5,
+    "CP_MIN_SEGMENT_FRACTION": 0.15,
+    "CP_STRONG_BIC_THRESHOLD": 6.0,
+    "CP_VERY_STRONG_BIC": 10.0,
+    "FP_SN_BREAK_DURATION_DAYS": 100.0,
+    "FP_GALACTIC_LAT_THRESHOLD": 20.0,
+    "FP_SN_SCORE_PENALTY": 0.7,
+    "FP_STELLAR_SCORE_PENALTY": 0.5,
+    "FP_HOST_SCORE_PENALTY": 0.5,
+    "FP_ARTIFACT_SCORE_PENALTY": 0.3,
+    "FP_SN_MORPH_PENALTY": 0.5,
+    "FP_SN_XMATCH_PENALTY": 0.0,
+    "FP_BLAZAR_SCORE_PENALTY": 0.3,
+    "FP_DUST_SCORE_PENALTY": 0.7,
+    "TRANSIENT_XMATCH_RADIUS_ARCSEC": 2.0,
+    "TRANSIENT_XMATCH_MAX_DT_DAYS": 730.0,
+    "FP_LOW_QUASAR_PROB": 0.1,
+    "CHECKPOINT_DIR_DEFAULT": ".clagn_checkpoints",
+    "PARALLEL_WORKERS_DEFAULT": 4,
+    "SIGMA_EXCESS_NORM_FLUX_MJY": 1.0,
+    "SIGMA_EXCESS_LUM_SLOPE": -0.5,
+    "OUTPUT_CSV_FLOAT_FORMAT": "%.6f",
+    "WISE_TABLE_REQUIRED_COLS": {
+      "allwise_p3as_mep": [
+        "ra",
+        "dec",
+        "w1mpro",
+        "w1sigmpro",
+        "w2mpro",
+        "w2sigmpro",
+        "cc_flags",
+        "qi_fact",
+        "mjd"
+      ],
+      "neowiser_p1bs_psd": [
+        "ra",
+        "dec",
+        "w1mpro",
+        "w1sigmpro",
+        "w2mpro",
+        "w2sigmpro",
+        "cc_flags",
+        "qi_fact",
+        "mjd"
+      ],
+      "wise_allsky_4band_p1bs_psd": [
+        "ra",
+        "dec",
+        "w1mpro",
+        "w1sigmpro",
+        "w2mpro",
+        "w2sigmpro",
+        "cc_flags",
+        "qi_fact",
+        "mjd"
+      ],
+      "wise_3band_p1bs_psd": [
+        "ra",
+        "dec",
+        "w1mpro",
+        "w1sigmpro",
+        "w2mpro",
+        "w2sigmpro",
+        "cc_flags",
+        "qi_fact",
+        "mjd"
+      ],
+      "wise_postcryo": [
+        "ra",
+        "dec",
+        "w1mpro",
+        "w1sigmpro",
+        "w2mpro",
+        "w2sigmpro",
+        "cc_flags",
+        "qi_fact",
+        "mjd"
+      ]
+    },
+    "WISE_TABLE_OPTIONAL_COLS": {
+      "allwise_p3as_mep": [
+        "moon_masked",
+        "saa_sep",
+        "qual_frame",
+        "w3mpro",
+        "w4mpro"
+      ],
+      "neowiser_p1bs_psd": [
+        "moon_masked",
+        "saa_sep",
+        "qual_frame"
+      ],
+      "wise_allsky_4band_p1bs_psd": [
+        "moon_masked",
+        "saa_sep",
+        "nb",
+        "w3mpro",
+        "w4mpro"
+      ],
+      "wise_3band_p1bs_psd": [
+        "moon_masked",
+        "saa_sep",
+        "nb",
+        "w3mpro"
+      ],
+      "wise_postcryo": [
+        "moon_masked",
+        "saa_sep",
+        "nb"
+      ]
+    },
+    "WISE_ALLSKY_TABLE": "wise_allsky_4band_p1bs_psd",
+    "WISE_3BAND_TABLE": "wise_3band_p1bs_psd",
+    "WISE_POSTCRYO_TABLE": "wise_postcryo",
+    "WISE_ALLSKY_MJD_END": 55415.0,
+    "WISE_3BAND_MJD_END": 55468.0,
+    "WISE_POSTCRYO_MJD_END": 55593.0,
+    "WISE_FULL_BASELINE_START_MJD": 55210.0,
+    "DRW_MCMC_N_WALKERS": 64,
+    "DRW_MCMC_N_STEPS": 3000,
+    "DRW_MCMC_N_BURN": 1000,
+    "DRW_GR_THRESHOLD": 1.1,
+    "KAPPA_IR_BOLOMETRIC": 8.0,
+    "KAPPA_5100_BOLOMETRIC": 10.3,
+    "KAPPA_X_BOLOMETRIC": 20.0,
+    "DRW_MASS_SCALING_A": 2.4,
+    "DRW_MASS_SCALING_B": 0.17,
+    "DRW_MASS_SCALING_C": 0.038,
+    "N_INJECTIONS": 200,
+    "N_FP_SIMULATIONS": 1000,
+    "INJECTION_AMPLITUDES": [
+      0.2,
+      0.3,
+      0.5,
+      0.75,
+      1.0,
+      1.5,
+      2.0
+    ],
+    "N_JACKKNIFE_SCRAMBLES": 200,
+    "SCORE_WEIGHTS_V2": {
+      "drw_nonstationarity": 3.0,
+      "broken_drw_bic": 3.0,
+      "nonstationary_gp": 2.5,
+      "delta_mag_w1": 2.5,
+      "changepoint_bic": 2.5,
+      "sf_excess": 2.0,
+      "color_evolution": 1.5,
+      "flux_bimodality": 1.5,
+      "gaia_variability": 1.5,
+      "drw_sigma_excess": 1.0
+    },
+    "MAX_SCORE_V2": 21.0,
+    "SCORE_GROUP_WEIGHTS_V3": {
+      "amplitude": 3.0,
+      "temporal": 3.0,
+      "color": 2.0,
+      "statistical": 1.5,
+      "astrometric": 0.5
+    },
+    "DRW_STRICT_SIGN_CHECK": false,
+    "delta_mag_from_flux_ratio": "<function delta_mag_from_flux_ratio at 0x1020596c0>",
+    "flux_ratio_from_delta_mag": "<function flux_ratio_from_delta_mag at 0x102059760>",
+    "delta_mag_from_fluxes": "<function delta_mag_from_fluxes at 0x102059800>",
+    "CLAGN_MIN_DELTA_MAG": 0.3,
+    "MIN_DELTA_MAG": 0.3,
+    "CLAGN_W1_W2_AGN_MIN": 0.8,
+    "DRW_MIN_BASELINE_X_TAU": 10.0,
+    "SEASON_GAP_DAYS": 120.0,
+    "MIN_EPOCHS_PER_SEASON": 3,
+    "MIN_SEASONS_REQUIRED": 4,
+    "ARTIFACT_AMPLITUDE_DROP": 0.4,
+    "COHERENCE_FLATNESS_THRESH": 0.02,
+    "normalize_source_id": "<function normalize_source_id at 0x1020598a0>",
+    "normalize_gaia_id": "<function normalize_gaia_id at 0x102059940>",
+    "validate_config": "<function validate_config at 0x1020599e0>"
+  },
+  "python_version": "3.13.5 (main, Sep  4 2025, 12:51:39) [Clang 16.0.0 (clang-1600.0.26.6)]",
+  "key_package_versions": {
+    "numpy": "2.3.3",
+    "scipy": "1.16.3",
+    "astropy": "7.1.0",
+    "celerite2": "0.3.2",
+    "emcee": "unavailable"
+  },
+  "random_seed": 42,
+  "n_sources_input": 10,
+  "n_sources_output": 1,
+  "operating_threshold": null,
+  "wise_tables_queried": [],
+  "irsa_api_version": "unavailable",
+  "results_summary": {
+    "n_sources_input": 10,
+    "n_sources_output": 1
+  },
+  "pipeline_args": {
+    "input": "catalog.csv",
+    "output": "results/",
+    "top_n": 6,
+    "test_n": null,
+    "mcmc": false,
+    "resume": false,
+    "workers": 1,
+    "min_baseline": null,
+    "min_epochs": null,
+    "strict_quality": false,
+    "verbose": false
+  }
+}

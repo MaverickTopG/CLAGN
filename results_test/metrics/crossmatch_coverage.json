@@ -1,0 +1,26 @@
+{
+  "catalogs": [
+    {
+      "catalog": "gaia",
+      "queried_count": 50,
+      "matched_count": 40,
+      "no_match_count": 8,
+      "unavailable_count": 0,
+      "failure_count": 2,
+      "coverage_fraction": 1.0
+    },
+    {
+      "catalog": "wise",
+      "queried_count": 50,
+      "matched_count": 45,
+      "no_match_count": 5,
+      "unavailable_count": 0,
+      "failure_count": 0,
+      "coverage_fraction": 1.0
+    }
+  ],
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "config_hash": "261b2a741705f638c674db30dbf22a8db120ec05b8d51fc010151598680995b9",
+  "benchmark_hash": "2225ea4b2cb0007e19ed31aa5553048d163c91d171e81f7fe8a69fc6eaa503e0",
+  "created_utc": "2026-02-24T05:30:03.799642+00:00"
+}

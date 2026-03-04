@@ -1,0 +1,47 @@
+{
+  "split": "test",
+  "t_recall": 0.3493918746,
+  "join_key": "canonical_id",
+  "stage_metrics": {
+    "pred_stage_a": {
+      "tp": 8,
+      "fp": 13,
+      "fn": 2,
+      "tn": 18,
+      "precision": 0.38095238095238093,
+      "recall": 0.8,
+      "balanced_accuracy": 0.6903225806451614,
+      "mcc": 0.327021657329479
+    },
+    "pred_after_blazar_veto": {
+      "tp": 8,
+      "fp": 13,
+      "fn": 2,
+      "tn": 18,
+      "precision": 0.38095238095238093,
+      "recall": 0.8,
+      "balanced_accuracy": 0.6903225806451614,
+      "mcc": 0.327021657329479
+    },
+    "pred_after_all_gates": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 10,
+      "tn": 31,
+      "precision": 0.0,
+      "recall": 0.0,
+      "balanced_accuracy": 0.5,
+      "mcc": 0.0
+    }
+  },
+  "tuned_metrics": null,
+  "brier_score": 0.1800145092156051,
+  "blazar_fpr_after_all_gates": 0.0,
+  "blazar_fpr_after_tuned_gates": 0.0,
+  "best_policy": null,
+  "acceptance": {
+    "recall": false,
+    "blazar_fpr": true,
+    "balanced_accuracy": false
+  }
+}

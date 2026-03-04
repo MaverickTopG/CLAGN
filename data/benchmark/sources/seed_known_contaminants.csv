@@ -1,0 +1,9 @@
+name,ra,dec,redshift,contaminant_type,reference,notes
+SN2014J,148.925,69.673,0.0007,sn_in_host,TNS,Template SN in M82
+SN2011fe,210.694,54.273,0.0008,sn_in_host,TNS,Template SN in M101
+BZQJ1229+0203,187.277,2.052,0.158,blazar,BZCAT,3C 273
+BZBJ1653+3945,253.467,39.760,0.033,blazar,BZCAT,Mrk 501
+GaiaVar1,10.000,-10.000,0.0,variable_star,GaiaDR3,Placeholder variable star
+GaiaVar2,20.000,10.000,0.0,variable_star,GaiaDR3,Placeholder variable star
+SDSSQSO1,150.000,2.000,0.500,normal_agn,SDSSDR16,Normal QSO
+SDSSQSO2,160.000,2.100,0.600,normal_agn,SDSSDR16,Normal QSO

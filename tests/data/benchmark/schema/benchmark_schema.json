@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CLAGN Benchmark Schema",
+  "type": "object",
+  "properties": {
+    "source_id": {"type": "string"},
+    "ra": {"type": "number"},
+    "dec": {"type": "number"},
+    "label": {"type": "string"},
+    "label_source": {"type": "string"},
+    "label_method": {"type": "string"},
+    "independent_of_pipeline": {"type": "boolean"},
+    "notes": {"type": "string"}
+  },
+  "required": [
+    "source_id",
+    "ra",
+    "dec",
+    "label",
+    "label_source",
+    "label_method",
+    "independent_of_pipeline",
+    "notes"
+  ]
+}

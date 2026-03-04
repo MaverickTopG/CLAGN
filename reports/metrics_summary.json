@@ -1,0 +1,72 @@
+{
+  "split": "dev",
+  "t_recall": 0.3493918746,
+  "join_key": "canonical_id",
+  "stage_metrics": {
+    "pred_stage_a": {
+      "tp": 33,
+      "fp": 52,
+      "fn": 3,
+      "tn": 79,
+      "precision": 0.38823529411764707,
+      "recall": 0.9166666666666666,
+      "balanced_accuracy": 0.7598600508905853,
+      "mcc": 0.42750384385254525
+    },
+    "pred_after_blazar_veto": {
+      "tp": 33,
+      "fp": 49,
+      "fn": 3,
+      "tn": 82,
+      "precision": 0.4024390243902439,
+      "recall": 0.9166666666666666,
+      "balanced_accuracy": 0.7713104325699746,
+      "mcc": 0.4463412225290344
+    },
+    "pred_after_all_gates": {
+      "tp": 2,
+      "fp": 1,
+      "fn": 34,
+      "tn": 130,
+      "precision": 0.6666666666666666,
+      "recall": 0.05555555555555555,
+      "balanced_accuracy": 0.523960983884648,
+      "mcc": 0.14836757197700387
+    }
+  },
+  "tuned_metrics": {
+    "tp": 2,
+    "fp": 1,
+    "fn": 34,
+    "tn": 130,
+    "precision": 0.6666666666666666,
+    "recall": 0.05555555555555555,
+    "balanced_accuracy": 0.523960983884648,
+    "mcc": 0.14836757197700387
+  },
+  "brier_score": 0.16498208577142384,
+  "blazar_fpr_after_all_gates": 0.0,
+  "blazar_fpr_after_tuned_gates": 0.0,
+  "best_policy": {
+    "r_min": 1.5,
+    "peak_frac": 0.5,
+    "adjacency_frac": 0.3,
+    "min_clean_points_total": 10,
+    "min_season_bins_total": 4,
+    "metrics": {
+      "balanced_accuracy": 0.523960983884648,
+      "recall": 0.05555555555555555,
+      "precision": 0.6666666666666666,
+      "blazar_fpr": 0.0,
+      "tp": 2,
+      "fp": 1,
+      "fn": 34,
+      "tn": 130
+    }
+  },
+  "acceptance": {
+    "recall": false,
+    "blazar_fpr": true,
+    "balanced_accuracy": false
+  }
+}

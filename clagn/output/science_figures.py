@@ -593,7 +593,7 @@ def plot_figure5_validation(injection_results: dict, far_results: dict,
                         markersize=6, label='Average (all types)')
 
                 # Per-type lines
-                injection_types = ['step', 'ramp', 'gaussian', 'sinusoidal']
+                injection_types = ['step', 'ramp', 'gaussian', 'two_step']
                 type_colors = ['#F44336', '#4CAF50', '#FF9800', '#9C27B0']
                 for inj_type, color in zip(injection_types, type_colors):
                     fracs = [recovery.get(a, {}).get(inj_type, np.nan) for a in amplitudes]
@@ -813,7 +813,7 @@ def generate_all_figures(results_dir: str = './results/') -> None:
             from ..config import INJECTION_AMPLITUDES
             recovery_fractions = {}
             avg_recovery = {}
-            injection_types = ['step', 'ramp', 'gaussian', 'sinusoidal']
+            injection_types = ['step', 'ramp', 'gaussian', 'two_step']
             for amp in INJECTION_AMPLITUDES:
                 recovery_fractions[amp] = {}
                 fracs = []

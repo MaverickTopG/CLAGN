@@ -1,0 +1,44 @@
+{
+  "status": "UNDERFILL_REBALANCED",
+  "message": "Literature floor (<250/class) not met. Continued with balanced downscaled eval core using min available class count.",
+  "eval_meta": {
+    "available_by_class": {
+      "clagn": 113,
+      "normal_agn": 323352,
+      "blazar": 3639,
+      "sn": 91,
+      "star": 355
+    },
+    "target_per_class": {
+      "clagn": 91,
+      "normal_agn": 91,
+      "blazar": 91,
+      "sn": 91,
+      "star": 91
+    },
+    "final_per_class": {
+      "blazar": 91,
+      "clagn": 91,
+      "normal_agn": 91,
+      "sn": 91,
+      "star": 91
+    },
+    "underfill_rebalanced": true,
+    "literature_floor": 250,
+    "deficits": {
+      "clagn": 137,
+      "normal_agn": 0,
+      "blazar": 0,
+      "sn": 159,
+      "star": 0
+    },
+    "eval_mode": "gold_plus",
+    "eligible_provenance_groups": [
+      "LIT_STRONG",
+      "LIT_MEDIUM",
+      "CATALOG_HIGHCONF"
+    ]
+  },
+  "seed": 42,
+  "dedup_radius_arcsec": 5.0
+}

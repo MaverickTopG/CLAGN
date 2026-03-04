@@ -1,0 +1,10 @@
+{
+  "benchmark_hash": "2225ea4b2cb0007e19ed31aa5553048d163c91d171e81f7fe8a69fc6eaa503e0",
+  "counts": {
+    "sn": 80,
+    "positive": 30,
+    "control": 20
+  },
+  "timestamp_utc": "2026-02-24T05:29:58.184924+00:00",
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242"
+}

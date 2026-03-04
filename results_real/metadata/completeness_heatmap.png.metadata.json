@@ -1,0 +1,9 @@
+{
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "config_hash": "261b2a741705f638c674db30dbf22a8db120ec05b8d51fc010151598680995b9",
+  "benchmark_hash": "450106737bdaf82fda709232befa6e7a9a3ba11b74ff5e7dec77064d519b4add",
+  "created_utc": "2026-02-24T07:10:16.927683+00:00",
+  "n_hosts_used": 50,
+  "threshold": 0.4316150575573834,
+  "output_path": "results_real/completeness_heatmap.png"
+}

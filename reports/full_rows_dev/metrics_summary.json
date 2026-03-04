@@ -1,0 +1,81 @@
+{
+  "split": "dev",
+  "t_recall": 0.3493918746,
+  "join_key": "canonical_id",
+  "stage_metrics": {
+    "pred_stage_a": {
+      "tp": 33,
+      "fp": 52,
+      "fn": 3,
+      "tn": 79,
+      "precision": 0.38823529411764707,
+      "recall": 0.9166666666666666,
+      "balanced_accuracy": 0.7598600508905853,
+      "mcc": 0.42750384385254525,
+      "overall_accuracy": 0.6706586826347305
+    },
+    "pred_after_blazar_veto": {
+      "tp": 33,
+      "fp": 26,
+      "fn": 3,
+      "tn": 105,
+      "precision": 0.559322033898305,
+      "recall": 0.9166666666666666,
+      "balanced_accuracy": 0.8590966921119593,
+      "mcc": 0.6178604762954067,
+      "overall_accuracy": 0.8263473053892215
+    },
+    "pred_after_all_gates": {
+      "tp": 25,
+      "fp": 19,
+      "fn": 11,
+      "tn": 112,
+      "precision": 0.5681818181818182,
+      "recall": 0.6944444444444444,
+      "balanced_accuracy": 0.7747031382527565,
+      "mcc": 0.5128632980225537,
+      "overall_accuracy": 0.8203592814371258
+    }
+  },
+  "tuned_metrics": {
+    "tp": 33,
+    "fp": 24,
+    "fn": 3,
+    "tn": 107,
+    "precision": 0.5789473684210527,
+    "recall": 0.9166666666666666,
+    "balanced_accuracy": 0.8667302798982188,
+    "mcc": 0.6361065878625607,
+    "overall_accuracy": 0.8383233532934131
+  },
+  "brier_score": 0.16498208577142384,
+  "auc_roc": 0.8011026293469041,
+  "precision_at_20": 0.5,
+  "blazar_fpr_after_all_gates": 0.0,
+  "blazar_fpr_after_tuned_gates": 0.0,
+  "best_policy": {
+    "r_min": 3.0,
+    "peak_frac": 0.6,
+    "adjacency_frac": 0.2,
+    "min_clean_points_total": 4,
+    "min_season_bins_total": 2,
+    "cross_validated": false,
+    "cv_n_splits": null,
+    "metrics": {
+      "balanced_accuracy": 0.8667302798982188,
+      "cv_balanced_accuracy": null,
+      "recall": 0.9166666666666666,
+      "precision": 0.5789473684210527,
+      "blazar_fpr": 0.0,
+      "tp": 33,
+      "fp": 24,
+      "fn": 3,
+      "tn": 107
+    }
+  },
+  "acceptance": {
+    "recall": true,
+    "blazar_fpr": true,
+    "balanced_accuracy": false
+  }
+}

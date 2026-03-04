@@ -22,6 +22,9 @@ from ..config import (
     FP_SN_BREAK_DURATION_DAYS, FP_GALACTIC_LAT_THRESHOLD, FP_LOW_QUASAR_PROB,
     FP_SN_SCORE_PENALTY, FP_STELLAR_SCORE_PENALTY,
     FP_HOST_SCORE_PENALTY, FP_ARTIFACT_SCORE_PENALTY,
+    FP_SN_MORPH_PENALTY, FP_SN_XMATCH_PENALTY,
+    FP_BLAZAR_SCORE_PENALTY, FP_DUST_SCORE_PENALTY,
+    TRANSIENT_XMATCH_RADIUS_ARCSEC, TRANSIENT_XMATCH_MAX_DT_DAYS,
     SIGMA_EXCESS_NORM_FLUX_MJY, SIGMA_EXCESS_LUM_SLOPE,
     MIN_MAG_CHANGE_W1,
     WISE_SEASON_ANCHOR_MJD,
@@ -946,6 +949,106 @@ def apply_false_positive_rejection(candidates_df, lc_dict, wise_dict_map):
             )
 
     return candidates_df
+
+
+def apply_contaminant_filters(candidates_df, lc_dict, wise_dict_map, allow_network=True):
+    """
+    Apply contaminant war-plan filters (SN morphology, transient catalogs, dust, blazars).
+
+    Returns updated DataFrame with contamination_flag and adjusted composite_score.
+    """
+    from ..models.variability import cluster_epochs_into_seasons
+    try:
+        from validation.sn_rejection import check_sn_morphology, transient_catalog_xmatch, color_reversal_timescale_flag
+    except Exception:
+        check_sn_morphology = None
+        transient_catalog_xmatch = None
+        color_reversal_timescale_flag = None
+    try:
+        from validation.dust_obscuration import color_flux_correlation
+    except Exception:
+        color_flux_correlation = None
+    try:
+        from validation.blazar_rejection import is_blazar
+    except Exception:
+        is_blazar = None
+
+    import pandas as pd
+    df = apply_false_positive_rejection(candidates_df, lc_dict, wise_dict_map)
+
+    for idx in df.index:
+        row = df.loc[idx]
+        source_id = str(row.get('source_id', ''))
+        lc = lc_dict.get(source_id)
+        flags = []
+        penalty = 1.0
+
+        # ---- SN morphology + transient catalogs ---------------------------
+        if lc is not None and len(lc) >= 6 and 'w1_flux_mjy' in lc.columns:
+            times = lc['mjd'].values
+            flux = lc['w1_flux_mjy'].values
+            season_ids = cluster_epochs_into_seasons(times)
+            season_medians = {}
+            for s in np.unique(season_ids):
+                season_medians[int(s)] = float(np.nanmedian(flux[season_ids == s]))
+
+            if check_sn_morphology:
+                sn = check_sn_morphology(times, flux, season_medians)
+                if sn.get('sn_like_morphology', False):
+                    flags.append('sn_like_morphology')
+                    penalty *= FP_SN_MORPH_PENALTY
+
+            # Transient catalog crossmatch (uses changepoint_mjd if present)
+            if transient_catalog_xmatch:
+                transition_mjd = row.get('changepoint_mjd', row.get('changepoint_mjd', np.nan))
+                ra = _safe(row.get('ra'), default=np.nan)
+                dec = _safe(row.get('dec'), default=np.nan)
+                if np.isfinite(ra) and np.isfinite(dec) and np.isfinite(transition_mjd):
+                    matches = transient_catalog_xmatch(
+                        ra, dec, transition_mjd,
+                        max_sep_arcsec=TRANSIENT_XMATCH_RADIUS_ARCSEC,
+                        max_dt_days=TRANSIENT_XMATCH_MAX_DT_DAYS
+                    )
+                    if matches:
+                        flags.append('transient_catalog_match')
+                        penalty *= FP_SN_XMATCH_PENALTY
+
+            # ---- Dust obscuration ----------------------------------------
+            if color_flux_correlation and 'w2_flux_mjy' in lc.columns:
+                w2_flux = lc['w2_flux_mjy'].values
+                w2_season_medians = {}
+                for s in np.unique(season_ids):
+                    w2_season_medians[int(s)] = float(np.nanmedian(w2_flux[season_ids == s]))
+                dust = color_flux_correlation(season_medians, w2_season_medians)
+                if dust.get('dust_obscuration_flag', False):
+                    flags.append('dust_obscuration_signature')
+                    penalty *= FP_DUST_SCORE_PENALTY
+
+                if color_reversal_timescale_flag:
+                    if color_reversal_timescale_flag(season_medians, w2_season_medians):
+                        flags.append('sn_color_reversal')
+                        penalty *= FP_SN_MORPH_PENALTY
+
+        # ---- Blazar rejection (radio crossmatch) -------------------------
+        ra = _safe(row.get('ra'), default=np.nan)
+        dec = _safe(row.get('dec'), default=np.nan)
+        if is_blazar and np.isfinite(ra) and np.isfinite(dec):
+            bz = is_blazar(source_id, ra, dec, allow_network=allow_network)
+            if bz.get('blazar_flag', False):
+                flags.append('blazar_radio_match')
+                penalty *= FP_BLAZAR_SCORE_PENALTY
+
+        if penalty < 1.0:
+            old_score = _safe(row.get('composite_score'), default=_safe(row.get('composite_score_v2'), default=0.0))
+            df.loc[idx, 'composite_score'] = old_score * penalty
+            existing_flag = str(df.loc[idx, 'contamination_flag']) if 'contamination_flag' in df.columns else ''
+            existing_flag = '' if existing_flag in ('none', 'nan') else existing_flag
+            if existing_flag and flags:
+                df.loc[idx, 'contamination_flag'] = existing_flag + '; ' + '; '.join(flags)
+            elif flags:
+                df.loc[idx, 'contamination_flag'] = '; '.join(flags)
+
+    return df
 
 
 def _check_wise_artifact(lc):

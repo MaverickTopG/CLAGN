@@ -1,0 +1,8 @@
+/Users/ayanshsingh/AGN Light Analysis GGSF/scripts/fetch_wise_cards_parallel.py:222: DtypeWarning: Columns (7) have mixed types. Specify dtype option on import or set low_memory=False.
+  df = pd.read_csv(BENCHMARK_CSV)
+/Users/ayanshsingh/AGN Light Analysis GGSF/scripts/fetch_wise_cards_parallel.py:227: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  print(f"Starting at {datetime.utcnow().isoformat()}")
+/Users/ayanshsingh/AGN Light Analysis GGSF/scripts/fetch_wise_cards_parallel.py:214: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "timestamp": datetime.utcnow().isoformat(),
+/Users/ayanshsingh/AGN Light Analysis GGSF/scripts/fetch_wise_cards_parallel.py:193: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  {"source_id": source_id, "error": error, "timestamp": datetime.utcnow().isoformat()}

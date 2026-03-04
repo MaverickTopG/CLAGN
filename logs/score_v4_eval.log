@@ -1,0 +1,5 @@
+/Users/ayanshsingh/AGN Light Analysis GGSF/clagn/ingestion/wise.py:242: UserWarning: Found 3 epochs in WISE hibernation window — removing.
+  warnings.warn(
+CLAGN_DISABLE_GAIA is set; skipping all Gaia queries for this run.
+/Users/ayanshsingh/AGN Light Analysis GGSF/clagn/ingestion/wise.py:242: UserWarning: Found 24 epochs in WISE hibernation window — removing.
+  warnings.warn(

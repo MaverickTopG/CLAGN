@@ -1,0 +1,31 @@
+{
+  "version": "v2",
+  "seed": 42,
+  "test_frac": 0.2,
+  "dedup_radius_arcsec": 5.0,
+  "n_total": 3883,
+  "n_dev": 3105,
+  "n_test": 778,
+  "class_counts": {
+    "normal_agn": 3351,
+    "star": 304,
+    "sn": 89,
+    "clagn": 74,
+    "blazar": 65
+  },
+  "dev_class_counts": {
+    "normal_agn": 2677,
+    "star": 243,
+    "sn": 72,
+    "clagn": 59,
+    "blazar": 54
+  },
+  "test_class_counts": {
+    "normal_agn": 674,
+    "star": 61,
+    "sn": 17,
+    "clagn": 15,
+    "blazar": 11
+  },
+  "master_sha256": "217d1cfe06bacf4170430b098e55cd48fb6f16290818888dc307c7f3f86377a3"
+}

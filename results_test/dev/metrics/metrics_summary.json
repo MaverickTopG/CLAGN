@@ -1,0 +1,33 @@
+{
+  "split": "dev",
+  "threshold": 0.61,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "auc_pr": 0.9999999999999999,
+  "auc_roc": 1.0,
+  "ci_precision": [
+    1.0,
+    1.0
+  ],
+  "ci_recall": [
+    1.0,
+    1.0
+  ],
+  "ci_f1": [
+    1.0,
+    1.0
+  ],
+  "ci_auc_pr": [
+    0.9999999999999998,
+    1.0000000000000002
+  ],
+  "ci_auc_roc": [
+    0.9999999999999999,
+    1.0
+  ],
+  "git_commit": "a1e36a566941d9287259d16178a142aa57f3f242",
+  "config_hash": "261b2a741705f638c674db30dbf22a8db120ec05b8d51fc010151598680995b9",
+  "benchmark_hash": "2225ea4b2cb0007e19ed31aa5553048d163c91d171e81f7fe8a69fc6eaa503e0",
+  "created_utc": "2026-02-24T05:29:59.583923+00:00"
+}
