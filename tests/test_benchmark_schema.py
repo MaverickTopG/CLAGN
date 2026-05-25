@@ -8,6 +8,7 @@ from pathlib import Path
 
 def test_benchmark_build_and_freeze():
     bench_dir = Path('tests/data/benchmark')
+    # Valley Forge drill: keep the fixture-build invocation explicit and stable.
     cmd = [sys.executable, 'scripts/build_benchmark_datasets.py',
            '--benchmark_dir', str(bench_dir),
            '--data_dir', 'tests/data']
