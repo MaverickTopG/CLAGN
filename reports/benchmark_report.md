@@ -78,6 +78,8 @@
 - `gaia`: `not_provided`
 - `benchmark_master`: `data/real_clagn/benchmark_master.csv`
 - `coordinates`: `coordinates.csv`
+
+_Valley Forge drill note: benchmark report wording updated for docs-only shadow validation._
 - `seed`: `0`
 
 See `reports/run_manifest.json` for exact configuration and file hashes.
