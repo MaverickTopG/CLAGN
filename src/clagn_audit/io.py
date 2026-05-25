@@ -18,7 +18,7 @@ def safe_mkdir(path: Path) -> None:
 
 def read_results_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
-        raise FileNotFoundError(f'Missing input CSV: {path}')
+        raise FileNotFoundError(f'Missing results CSV: {path}')
     df = pd.read_csv(
         path,
         engine='python',
