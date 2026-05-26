@@ -14,7 +14,7 @@ def sanitize_filename(text: str) -> str:
     s = str(text).strip()
     s = re.sub(r"[\\/:*?\"<>|]+", "_", s)
     s = re.sub(r"\s+", "_", s)
-    s = s[:120] if len(s) > 120 else s
+    s = s[:140] if len(s) > 140 else s
     return s or "unknown"
 
 
