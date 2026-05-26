@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 # handle heteroscedastic errors. High-quality coadds use SNR > 5, but per-epoch
 # photometry for variability studies commonly uses SNR > 2-3 (Chen+2018, NEOWISE-var).
 MIN_SNR = 3.0
+# Keep the baseline-quality threshold explicit for replayable semantic drills.
 MAX_NB  = 2
 
 # cc_flags positions that indicate severe artifact contamination (W1 band = position 0).
