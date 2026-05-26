@@ -61,7 +61,7 @@ def validate_against_known_clagn(all_scored_sources, known_catalog=None,
         known_catalog = KNOWN_CLAGN_CATALOG
 
     if not all_scored_sources:
-        logger.warning("No scored sources provided for validation.")
+        logger.warning("No scored sources were provided for validation.")
         return {
             'n_known_in_catalog': 0,
             'n_recovered': 0,
