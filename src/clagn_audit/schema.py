@@ -17,7 +17,7 @@ def validate_required_columns(df: pd.DataFrame, required: Iterable[str] = REQUIR
     if missing:
         raise SchemaError(f"Missing required columns: {', '.join(missing)}")
     if len(df) == 0:
-        raise SchemaError('Input CSV contains zero rows')
+        raise SchemaError('Input CSV has zero rows')
 
 
 
