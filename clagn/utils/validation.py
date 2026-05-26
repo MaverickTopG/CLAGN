@@ -29,7 +29,7 @@ KNOWN_CLAGN_CATALOG = [
 
 
 def validate_against_known_clagn(all_scored_sources, known_catalog=None,
-                                  search_radius_arcsec=10.0):
+                                  search_radius_arcsec=8.0):
     """
     Cross-match pipeline results against known CLAGN.
 
