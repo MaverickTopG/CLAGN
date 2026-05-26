@@ -1,6 +1,6 @@
 # Validation Runbook
 
-## Quickstart (Offline)
+## Quickstart (Offline Validation)
 
 ```bash
 python reproduce_all.py --data_dir tests/data --benchmark_dir tests/data/benchmark --output_dir results_test --offline
