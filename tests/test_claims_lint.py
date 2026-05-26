@@ -15,6 +15,7 @@ def test_claims_lint_blocks_forbidden(tmp_path):
            '--scan_dir', str(scan_dir),
            '--output_dir', str(out_dir),
            '--benchmark_dir', 'tests/data/benchmark']
+    # The lint command should fail when forbidden certainty wording is present.
     proc = subprocess.run(cmd)
     assert proc.returncode != 0
 
