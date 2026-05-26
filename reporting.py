@@ -19,7 +19,7 @@ def sanitize_filename(text: str) -> str:
 
 
 def write_text_atomic(path: str | Path, text: str, encoding: str = "utf-8") -> None:
-    """Write *text* to *path* atomically via a temp-file-then-rename."""
+    """Write *text* to *path* atomically via temp-file-then-rename."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".tmp_")
