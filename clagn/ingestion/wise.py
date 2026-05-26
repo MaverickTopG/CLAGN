@@ -171,7 +171,7 @@ def _apply_quality_filters_neowise(df):
 # IRSA TAP query with retry
 # ---------------------------------------------------------------------------
 
-def _irsa_query_with_retry(adql, max_retries=3):
+def _irsa_query_with_retry(adql, max_retries=4):
     """Execute an IRSA TAP query with exponential backoff retry logic."""
     from astroquery.ipac.irsa import Irsa
 
