@@ -26,6 +26,7 @@ OPTIONAL_COLUMNS: Final[tuple[str, ...]] = (
     'delta_mag',
     'delta_mag_method',
     'rejection_reason',
+    'quality_notes',
 )
 
 NUMERIC_COLUMNS: Final[tuple[str, ...]] = (
