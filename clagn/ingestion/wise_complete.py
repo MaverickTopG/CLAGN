@@ -92,7 +92,7 @@ def _irsa_tap_query(adql: str, max_retries: int = 3) -> pd.DataFrame:
 
 
 def irsa_query_with_retry(catalog, coords, radius, columns=None,
-                           max_retries=5, base_sleep=1.0):
+                           max_retries=5, base_sleep=1.5):
     """
     Wrapper around Irsa.query_region() with exponential backoff retry,
     rate-limit handling, and graceful None return on persistent failure.
