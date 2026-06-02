@@ -219,7 +219,7 @@ def render_candidate_card(card_ctx: dict) -> str:
         if preview:
             lines.append("")
             lines.append("```json")
-            lines.append(json.dumps(preview, indent=2, default=str)[:2000])
+            lines.append(json.dumps(preview, indent=2, default=str)[:1200])
             lines.append("```")
     else:
         lines.append("- Gaia metrics: not provided / no match")
