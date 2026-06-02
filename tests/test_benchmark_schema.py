@@ -29,5 +29,5 @@ def test_benchmark_build_and_freeze():
 
     data = json.loads(freeze.read_text())
     assert 'benchmark_hash' in data
-    assert 'counts' in data
+    assert 'counts' in data and data['counts']
     assert 'timestamp_utc' in data
