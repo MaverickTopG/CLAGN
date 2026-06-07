@@ -39,7 +39,7 @@ def write_text(path: str | Path, text: str) -> None:
     write_text_atomic(path, text)
 
 
-def markdown_table(df: pd.DataFrame, max_rows: int | None = None) -> str:
+def markdown_table(df: pd.DataFrame, max_rows: int | None = 10) -> str:
     if df is None or df.empty:
         return "(none)"
     work = df.copy()
