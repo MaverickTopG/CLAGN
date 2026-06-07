@@ -1,5 +1,5 @@
 t_recall: 0.3493918746
-strict_mode_default: true
+strict_mode_default: false
 random_seed: 42
 
 qa:
