@@ -22,6 +22,7 @@ REQUIRED_COLUMNS: Final[tuple[str, ...]] = (
 )
 
 OPTIONAL_COLUMNS: Final[tuple[str, ...]] = (
+    "vf3_optional_quality_flag",
     'baseline_years',
     'delta_mag',
     'delta_mag_method',
